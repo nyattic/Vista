@@ -151,7 +151,8 @@ class DownloadStore {
           error: undefined
         });
       } else {
-        libraryStore.markDownloaded(id);
+        if (result.failed === 0) libraryStore.markDownloaded(id);
+        else libraryStore.markNotDownloaded(id);
         this.patch(id, {
           ...prev,
           id,

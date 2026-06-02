@@ -65,7 +65,9 @@ impl HitomiClient {
         if let Some(dir) = self.cache_dir.get() {
             if bytes != 0 {
                 let dir = dir.clone();
-                tauri::async_runtime::spawn_blocking(move || image_cache::enforce_limit(&dir, bytes));
+                tauri::async_runtime::spawn_blocking(move || {
+                    image_cache::enforce_limit(&dir, bytes)
+                });
             }
         }
     }
@@ -91,10 +93,14 @@ impl HitomiClient {
         self.downloads.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn register_download(&self, id: i64) -> Arc<AtomicBool> {
+    fn register_download(&self, id: i64) -> AppResult<Arc<AtomicBool>> {
+        let mut downloads = self.downloads_guard();
+        if downloads.contains_key(&id) {
+            return Err(AppError::Other("download already running".into()));
+        }
         let flag = Arc::new(AtomicBool::new(false));
-        self.downloads_guard().insert(id, flag.clone());
-        flag
+        downloads.insert(id, flag.clone());
+        Ok(flag)
     }
 
     fn finish_download(&self, id: i64) {
@@ -118,7 +124,10 @@ impl HitomiClient {
     }
 
     pub fn cache_size(&self) -> u64 {
-        self.cache_dir.get().map(|d| image_cache::size(d)).unwrap_or(0)
+        self.cache_dir
+            .get()
+            .map(|d| image_cache::size(d))
+            .unwrap_or(0)
     }
 
     pub async fn gg_data(&self) -> Arc<GgData> {
@@ -187,7 +196,12 @@ impl HitomiClient {
 
     pub async fn fetch_gallery_info(&self, id: i64) -> AppResult<Gallery> {
         let url = format!("https://{}/galleries/{}.js", config::LTN_DOMAIN, id);
-        let resp = self.http.get(&url).headers(http::api_headers()).send().await?;
+        let resp = self
+            .http
+            .get(&url)
+            .headers(http::api_headers())
+            .send()
+            .await?;
         let status = resp.status();
         if status.as_u16() != 200 {
             return Err(AppError::Http {
@@ -232,7 +246,7 @@ impl HitomiClient {
                 format!("type:{}", gtype.slug()),
                 format!("language:{language}"),
             ];
-            let ids = unique_sorted_desc(self.fetch_ids_for_constraints(constraints).await);
+            let ids = unique_sorted_desc(self.fetch_ids_for_constraints(constraints).await?);
             return Ok(self.paginate_ids(ids, page).await);
         }
 
@@ -248,8 +262,7 @@ impl HitomiClient {
                 let type_url = nozomi_url_from_args("type", gtype.slug(), "all");
                 let popular_ids = fetch_all_gallery_ids(&self.http, &popular_url).await?;
                 let type_set: HashSet<i64> = fetch_all_gallery_ids(&self.http, &type_url)
-                    .await
-                    .unwrap_or_default()
+                    .await?
                     .into_iter()
                     .collect();
                 let ids: Vec<i64> = popular_ids
@@ -305,7 +318,8 @@ impl HitomiClient {
             Vec::new()
         } else {
             let end = (start + config::PAGE_SIZE).min(total);
-            self.load_galleries_in_parallel(ids[start..end].to_vec()).await
+            self.load_galleries_in_parallel(ids[start..end].to_vec())
+                .await
         };
 
         GalleryPage {
@@ -324,7 +338,7 @@ impl HitomiClient {
         let constraints = build_constraints(&terms);
 
         let ids = if !constraints.is_empty() {
-            self.fetch_ids_for_constraints(constraints).await
+            self.fetch_ids_for_constraints(constraints).await?
         } else {
             let url = nozomi_url_from_args("all", "index", "all");
             fetch_all_gallery_ids(&self.http, &url).await?
@@ -333,29 +347,32 @@ impl HitomiClient {
         Ok(unique_sorted_desc(ids))
     }
 
-    async fn fetch_ids_for_constraints(&self, constraints: Vec<String>) -> Vec<i64> {
+    async fn fetch_ids_for_constraints(&self, constraints: Vec<String>) -> AppResult<Vec<i64>> {
         let futures = constraints.iter().map(|c| {
             let client = &self.http;
             async move {
                 match constraint_to_nozomi_url(c) {
-                    Some(url) => fetch_all_gallery_ids(client, &url).await.unwrap_or_default(),
-                    None => Vec::new(),
+                    Some(url) => fetch_all_gallery_ids(client, &url).await,
+                    None => Ok(Vec::new()),
                 }
             }
         });
 
-        let results: Vec<Vec<i64>> = join_all(futures).await;
+        let results: Vec<Vec<i64>> = join_all(futures)
+            .await
+            .into_iter()
+            .collect::<AppResult<Vec<_>>>()?;
         let mut sets = results
             .into_iter()
             .map(|v| v.into_iter().collect::<HashSet<i64>>());
 
         let Some(mut acc) = sets.next() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for s in sets {
             acc = acc.intersection(&s).copied().collect();
         }
-        acc.into_iter().collect()
+        Ok(acc.into_iter().collect())
     }
 
     async fn load_galleries_in_parallel(&self, ids: Vec<i64>) -> Vec<Gallery> {
@@ -374,14 +391,27 @@ impl HitomiClient {
     }
 
     pub async fn tag_suggestions(&self, query: &str) -> AppResult<Vec<Suggestion>> {
-        let last = query.split(' ').next_back().unwrap_or("").trim().to_string();
+        let last = query
+            .split(' ')
+            .next_back()
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if last.is_empty() {
             return Ok(Vec::new());
         }
 
         const ALLOWED: [&str; 10] = [
-            "global", "tag", "female", "male", "language", "artist", "group", "series",
-            "character", "type",
+            "global",
+            "tag",
+            "female",
+            "male",
+            "language",
+            "artist",
+            "group",
+            "series",
+            "character",
+            "type",
         ];
         let mut field = "global";
         let mut term = last.as_str();
@@ -401,7 +431,12 @@ impl HitomiClient {
         };
         let url = format!("https://tagindex.hitomi.la{path}");
 
-        let resp = self.http.get(&url).headers(http::suggestions_headers()).send().await?;
+        let resp = self
+            .http
+            .get(&url)
+            .headers(http::suggestions_headers())
+            .send()
+            .await?;
         let status = resp.status().as_u16();
         if status == 404 {
             return Ok(Vec::new());
@@ -433,7 +468,11 @@ impl HitomiClient {
         Ok(out)
     }
 
-    pub async fn fetch_image_bytes(&self, hash: &str, is_thumbnail: bool) -> AppResult<(Vec<u8>, String)> {
+    pub async fn fetch_image_bytes(
+        &self,
+        hash: &str,
+        is_thumbnail: bool,
+    ) -> AppResult<(Vec<u8>, String)> {
         if !super::is_valid_hash(hash) {
             return Err(AppError::NotFound("invalid image hash".into()));
         }
@@ -443,7 +482,11 @@ impl HitomiClient {
             }
         }
 
-        let formats: &[&str] = if is_thumbnail { &["webp"] } else { &["webp", "avif"] };
+        let formats: &[&str] = if is_thumbnail {
+            &["webp"]
+        } else {
+            &["webp", "avif"]
+        };
         let urls = self.image_urls(hash, is_thumbnail, formats).await;
         let mut last_err: Option<AppError> = None;
 
@@ -473,7 +516,7 @@ impl HitomiClient {
         let folder = PathBuf::from(&dir).join(sanitize(&format!("[{}] {}", id, gallery.title)));
         std::fs::create_dir_all(&folder)?;
 
-        let cancel = self.register_download(id);
+        let cancel = self.register_download(id)?;
         let total = gallery.files.len();
         let done = Arc::new(AtomicUsize::new(0));
         let failed = Arc::new(AtomicUsize::new(0));
@@ -547,7 +590,10 @@ impl HitomiClient {
             }
         });
 
-        stream::iter(tasks).buffer_unordered(4).collect::<Vec<()>>().await;
+        stream::iter(tasks)
+            .buffer_unordered(4)
+            .collect::<Vec<()>>()
+            .await;
         self.finish_download(id);
 
         let failed = failed.load(Ordering::SeqCst);
@@ -588,7 +634,12 @@ impl HitomiClient {
     }
 
     async fn try_fetch_image(&self, url: &str) -> AppResult<(Vec<u8>, String)> {
-        let resp = self.http.get(url).headers(http::image_headers()).send().await?;
+        let resp = self
+            .http
+            .get(url)
+            .headers(http::image_headers())
+            .send()
+            .await?;
         let status = resp.status();
         if status.as_u16() != 200 {
             return Err(AppError::Http {
@@ -696,7 +747,11 @@ fn existing_page(folder: &std::path::Path, index: usize) -> Option<PathBuf> {
     const EXTS: [&str; 7] = ["webp", "avif", "jpg", "png", "gif", "jxl", "img"];
     for ext in EXTS {
         let path = folder.join(format!("{:04}.{}", index + 1, ext));
-        if path.metadata().map(|m| m.is_file() && m.len() > 0).unwrap_or(false) {
+        if path
+            .metadata()
+            .map(|m| m.is_file() && m.len() > 0)
+            .unwrap_or(false)
+        {
             return Some(path);
         }
     }
@@ -715,7 +770,11 @@ mod tests {
             .fetch_galleries(1, GalleryType::Anime, SortOrder::Latest, "korean")
             .await
             .expect("anime + korean browse failed");
-        println!("anime+korean: {} items, total={}", page.items.len(), page.total);
+        println!(
+            "anime+korean: {} items, total={}",
+            page.items.len(),
+            page.total
+        );
         assert!(
             page.items.iter().all(|g| g.gtype == "anime"),
             "all items should be anime"
@@ -768,7 +827,9 @@ mod tests {
         assert!(!first.files.is_empty(), "gallery should have files");
 
         let file = &first.files[0];
-        let urls = client.image_urls(&file.hash, false, &["webp", "avif"]).await;
+        let urls = client
+            .image_urls(&file.hash, false, &["webp", "avif"])
+            .await;
         println!("image urls for first page: {:#?}", urls);
         assert!(!urls.is_empty(), "expected image url candidates");
 
@@ -795,7 +856,10 @@ mod tests {
             size_after_fetch
         );
         assert_eq!(b1.len(), b2.len(), "cached bytes should match");
-        assert!(size_after_fetch > 0, "cache should contain data after fetch");
+        assert!(
+            size_after_fetch > 0,
+            "cache should contain data after fetch"
+        );
         let _ = std::fs::remove_dir_all(&tmp);
 
         let kr = client
@@ -807,7 +871,9 @@ mod tests {
             println!("  - lang={:?} title={}", g.language, g.title);
         }
         assert!(
-            kr.items.iter().all(|g| g.language.as_deref() == Some("korean")),
+            kr.items
+                .iter()
+                .all(|g| g.language.as_deref() == Some("korean")),
             "all korean browse items should be korean"
         );
     }
@@ -816,14 +882,20 @@ mod tests {
     #[ignore]
     async fn live_suggest() {
         let client = HitomiClient::new();
-        let s = client.tag_suggestions("naru").await.expect("suggest failed");
+        let s = client
+            .tag_suggestions("naru")
+            .await
+            .expect("suggest failed");
         println!("'naru' -> {} suggestions", s.len());
         for x in s.iter().take(5) {
             println!("  {} [{}] {} -> {}", x.label, x.namespace, x.count, x.value);
         }
         assert!(!s.is_empty(), "expected suggestions for 'naru'");
 
-        let f = client.tag_suggestions("female:bon").await.expect("suggest2 failed");
+        let f = client
+            .tag_suggestions("female:bon")
+            .await
+            .expect("suggest2 failed");
         println!("'female:bon' -> {:?}", f.first().map(|x| &x.value));
         assert!(f.iter().any(|x| x.namespace == "female"));
     }

@@ -291,7 +291,7 @@ pub fn all_progress(db: State<'_, Db>) -> AppResult<Vec<Progress>> {
 
 #[tauri::command]
 pub fn download_ids(db: State<'_, Db>) -> AppResult<Vec<i64>> {
-    db.download_ids()
+    db.completed_download_ids()
 }
 
 #[tauri::command]

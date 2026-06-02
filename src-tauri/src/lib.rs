@@ -30,15 +30,10 @@ pub fn run() {
                 app.state::<Arc<HitomiClient>>()
                     .set_cache_dir(cache.join("images"));
             }
-            if let Ok(data_dir) = app.path().app_data_dir() {
-                std::fs::create_dir_all(&data_dir).ok();
-                match Db::open(&data_dir.join("vista.db")) {
-                    Ok(db) => {
-                        app.manage(db);
-                    }
-                    Err(e) => log::error!("failed to open database: {e}"),
-                }
-            }
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+            let db = Db::open(&data_dir.join("vista.db"))?;
+            app.manage(db);
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

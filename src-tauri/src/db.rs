@@ -126,7 +126,8 @@ impl Db {
     }
 
     pub fn remove_favorite(&self, id: i64) -> AppResult<()> {
-        self.lock().execute("DELETE FROM favorites WHERE id = ?1", [id])?;
+        self.lock()
+            .execute("DELETE FROM favorites WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -141,7 +142,10 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn.prepare("SELECT data FROM favorites ORDER BY added_at DESC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        Ok(rows.filter_map(Result::ok).filter_map(|s| from_json(&s)).collect())
+        Ok(rows
+            .filter_map(Result::ok)
+            .filter_map(|s| from_json(&s))
+            .collect())
     }
 
     pub fn record_view(&self, g: &Gallery) -> AppResult<()> {
@@ -161,11 +165,15 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn.prepare("SELECT data FROM history ORDER BY viewed_at DESC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        Ok(rows.filter_map(Result::ok).filter_map(|s| from_json(&s)).collect())
+        Ok(rows
+            .filter_map(Result::ok)
+            .filter_map(|s| from_json(&s))
+            .collect())
     }
 
     pub fn remove_history(&self, id: i64) -> AppResult<()> {
-        self.lock().execute("DELETE FROM history WHERE id = ?1", [id])?;
+        self.lock()
+            .execute("DELETE FROM history WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -182,9 +190,11 @@ impl Db {
     ) -> AppResult<()> {
         let conn = self.lock();
         let inserted_at = conn
-            .query_row("SELECT downloaded_at FROM downloads WHERE id = ?1", [g.id], |row| {
-                row.get::<_, i64>(0)
-            })
+            .query_row(
+                "SELECT downloaded_at FROM downloads WHERE id = ?1",
+                [g.id],
+                |row| row.get::<_, i64>(0),
+            )
             .optional()?
             .unwrap_or_else(now);
         conn.execute(
@@ -195,11 +205,20 @@ impl Db {
         Ok(())
     }
 
-    pub fn download_ids(&self) -> AppResult<Vec<i64>> {
+    pub fn completed_download_ids(&self) -> AppResult<Vec<i64>> {
         let conn = self.lock();
-        let mut stmt = conn.prepare("SELECT id FROM downloads")?;
-        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
-        Ok(rows.filter_map(Result::ok).collect())
+        let mut stmt = conn.prepare("SELECT id, failed_pages FROM downloads")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        Ok(rows
+            .filter_map(Result::ok)
+            .filter_map(|(id, failed_pages)| {
+                from_json_vec::<usize>(&failed_pages)
+                    .is_empty()
+                    .then_some(id)
+            })
+            .collect())
     }
 
     pub fn download_record(&self, id: i64) -> AppResult<Option<DownloadRecord>> {
@@ -228,8 +247,8 @@ impl Db {
 
     pub fn list_downloads_raw(&self) -> AppResult<Vec<DownloadRecord>> {
         let conn = self.lock();
-        let mut stmt =
-            conn.prepare("SELECT data, folder, failed_pages FROM downloads ORDER BY updated_at DESC")?;
+        let mut stmt = conn
+            .prepare("SELECT data, folder, failed_pages FROM downloads ORDER BY updated_at DESC")?;
         let rows = stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -250,7 +269,8 @@ impl Db {
     }
 
     pub fn remove_download(&self, id: i64) -> AppResult<()> {
-        self.lock().execute("DELETE FROM downloads WHERE id = ?1", [id])?;
+        self.lock()
+            .execute("DELETE FROM downloads WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -273,5 +293,58 @@ impl Db {
             })
         })?;
         Ok(rows.filter_map(Result::ok).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hitomi::models::{Gallery, GalleryFile};
+
+    fn test_gallery(id: i64) -> Gallery {
+        Gallery {
+            id,
+            title: format!("Gallery {id}"),
+            gtype: "manga".to_string(),
+            language: Some("english".to_string()),
+            artists: Vec::new(),
+            groups: Vec::new(),
+            series: Vec::new(),
+            characters: Vec::new(),
+            tags: Vec::new(),
+            date: String::new(),
+            files: vec![GalleryFile {
+                name: "001.webp".to_string(),
+                hash: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                width: 100,
+                height: 100,
+                haswebp: 1,
+                hasavif: 0,
+                hasavifsmalltn: None,
+                local_path: None,
+            }],
+            page_count: 1,
+        }
+    }
+
+    #[test]
+    fn completed_download_ids_skip_partial_records() {
+        let path =
+            std::env::temp_dir().join(format!("vista-test-{}-{}.db", std::process::id(), now()));
+        let db = Db::open(&path).expect("open test db");
+        db.upsert_download(&test_gallery(1), "/tmp/full", &[])
+            .expect("insert full download");
+        db.upsert_download(&test_gallery(2), "/tmp/partial", &[1])
+            .expect("insert partial download");
+
+        let ids = db
+            .completed_download_ids()
+            .expect("list completed downloads");
+        assert_eq!(ids, vec![1]);
+
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
     }
 }

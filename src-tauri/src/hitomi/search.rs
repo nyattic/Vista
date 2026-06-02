@@ -5,7 +5,6 @@ pub struct SearchTerms {
     pub language: Option<String>,
     pub artists: Vec<String>,
     pub tags: Vec<String>,
-    pub titles: Vec<String>,
     pub types: Vec<String>,
     pub series: Vec<String>,
     pub characters: Vec<String>,
@@ -29,7 +28,6 @@ pub fn parse(query: &str) -> SearchTerms {
                     "tag" => t.tags.push(format!("tag:{value}")),
                     "female" => t.tags.push(format!("female:{value}")),
                     "male" => t.tags.push(format!("male:{value}")),
-                    "title" => t.titles.push(value.to_string()),
                     "type" => t.types.push(value.to_string()),
                     "series" => t.series.push(value.to_string()),
                     "character" => t.characters.push(value.to_string()),
@@ -138,6 +136,13 @@ mod tests {
     fn unknown_prefix_kept_as_general() {
         let t = parse("weird:thing");
         assert_eq!(t.general, vec!["weird:thing"]);
+    }
+
+    #[test]
+    fn title_prefix_is_not_special() {
+        let t = parse("title:foo");
+        assert_eq!(t.general, vec!["title:foo"]);
+        assert_eq!(build_constraints(&t), vec!["tag:title:foo"]);
     }
 
     #[test]
