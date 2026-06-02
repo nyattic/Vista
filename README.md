@@ -99,4 +99,4 @@ npm run tauri build    # produce a release bundle
 
 ## License
 
-[MIT](LICENSE). Not affiliated with or endorsed by hitomi.la.
+[MIT](LICENSE).
