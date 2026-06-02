@@ -30,7 +30,10 @@
     libraryStore.init();
     updateStore.init();
     galleryStore.load(1);
-    return () => mq.removeEventListener('change', handler);
+    return () => {
+      mq.removeEventListener('change', handler);
+      downloadStore.destroy();
+    };
   });
 
   $effect(() => {

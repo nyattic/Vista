@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { galleryStore } from '$lib/gallery-store.svelte';
   import { readerStore } from '$lib/reader-store.svelte';
   import { settingsStore } from '$lib/settings-store.svelte';
@@ -27,8 +27,8 @@
     const before = galleryStore.selectedId;
     const after = galleryStore.moveSelection(delta);
     if (after === before && edgeKey) {
-      if (edgeKey === 'next') galleryStore.next();
-      else galleryStore.prev();
+      if (edgeKey === 'next') galleryStore.next(true);
+      else galleryStore.prev(true);
       return;
     }
     focusCard(after);
@@ -49,6 +49,14 @@
   $effect(() => {
     galleryStore.page;
     if (container) container.scrollTo({ top: 0 });
+  });
+
+  // After a keyboard-initiated page flip the store bumps focusRequest; move DOM
+  // focus onto the freshly selected card. selectedId is read untracked so this
+  // only fires on an explicit request, not on every selection change.
+  $effect(() => {
+    galleryStore.focusRequest;
+    untrack(() => focusCard(galleryStore.selectedId));
   });
 </script>
 

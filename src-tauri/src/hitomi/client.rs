@@ -14,19 +14,20 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex as AsyncMutex, RwLock};
 
 const GG_TTL: Duration = Duration::from_secs(30 * 60);
 const CACHE_SWEEP_EVERY: usize = 200;
 
 struct GgCache {
-    data: GgData,
+    data: Arc<GgData>,
     fetched_at: Instant,
 }
 
 pub struct HitomiClient {
     http: reqwest::Client,
     gg: RwLock<Option<GgCache>>,
+    gg_refresh: AsyncMutex<()>,
     cache_dir: OnceLock<PathBuf>,
     cache_limit: AtomicU64,
     writes_since_sweep: AtomicUsize,
@@ -51,6 +52,7 @@ impl HitomiClient {
         HitomiClient {
             http: http::build_client(),
             gg: RwLock::new(None),
+            gg_refresh: AsyncMutex::new(()),
             cache_dir: OnceLock::new(),
             cache_limit: AtomicU64::new(config::DEFAULT_IMAGE_CACHE_BYTES),
             writes_since_sweep: AtomicUsize::new(0),
@@ -85,18 +87,22 @@ impl HitomiClient {
         tauri::async_runtime::spawn_blocking(move || image_cache::enforce_limit(&dir, limit));
     }
 
+    fn downloads_guard(&self) -> std::sync::MutexGuard<'_, HashMap<i64, Arc<AtomicBool>>> {
+        self.downloads.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn register_download(&self, id: i64) -> Arc<AtomicBool> {
         let flag = Arc::new(AtomicBool::new(false));
-        self.downloads.lock().unwrap().insert(id, flag.clone());
+        self.downloads_guard().insert(id, flag.clone());
         flag
     }
 
     fn finish_download(&self, id: i64) {
-        self.downloads.lock().unwrap().remove(&id);
+        self.downloads_guard().remove(&id);
     }
 
     pub fn cancel_download(&self, id: i64) {
-        if let Some(flag) = self.downloads.lock().unwrap().get(&id) {
+        if let Some(flag) = self.downloads_guard().get(&id) {
             flag.store(true, Ordering::SeqCst);
         }
     }
@@ -115,7 +121,18 @@ impl HitomiClient {
         self.cache_dir.get().map(|d| image_cache::size(d)).unwrap_or(0)
     }
 
-    pub async fn gg_data(&self) -> GgData {
+    pub async fn gg_data(&self) -> Arc<GgData> {
+        {
+            let guard = self.gg.read().await;
+            if let Some(c) = guard.as_ref() {
+                if c.fetched_at.elapsed() < GG_TTL {
+                    return c.data.clone();
+                }
+            }
+        }
+
+        let _gate = self.gg_refresh.lock().await;
+
         {
             let guard = self.gg.read().await;
             if let Some(c) = guard.as_ref() {
@@ -127,12 +144,13 @@ impl HitomiClient {
 
         match gg::fetch(&self.http).await {
             Ok(fresh) => {
+                let data = Arc::new(fresh);
                 let mut guard = self.gg.write().await;
                 *guard = Some(GgCache {
-                    data: fresh.clone(),
+                    data: data.clone(),
                     fetched_at: Instant::now(),
                 });
-                fresh
+                data
             }
             Err(_) => {
                 let mut guard = self.gg.write().await;
@@ -142,12 +160,12 @@ impl HitomiClient {
                         c.data.clone()
                     }
                     None => {
-                        let fb = gg::fallback();
+                        let data = Arc::new(gg::fallback());
                         *guard = Some(GgCache {
-                            data: fb.clone(),
+                            data: data.clone(),
                             fetched_at: Instant::now(),
                         });
-                        fb
+                        data
                     }
                 }
             }

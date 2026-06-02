@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { fileSrc } from '$lib/api';
   import { readerStore } from '$lib/reader-store.svelte';
   import { libraryStore } from '$lib/library-store.svelte';
@@ -20,6 +20,10 @@
   let jumpInput = $state('1');
   let scrolled = false;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  // Snapshot identity up front: `gallery` is derived from readerStore and becomes
+  // null on close, so the unmount flush below must not read it.
+  const galleryId = readerStore.gallery!.id;
+  const pageTotal = readerStore.gallery!.pageCount;
 
   const leftIdx = $derived(mode === 'spread' ? (rtl ? current + 1 : current) : current);
   const rightIdx = $derived(mode === 'spread' ? (rtl ? current : current + 1) : current);
@@ -143,10 +147,15 @@
 
   $effect(() => {
     const page = current + 1;
-    const total = gallery.pageCount;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => libraryStore.saveProgress(gallery.id, page, total), 600);
-    return () => clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => libraryStore.saveProgress(galleryId, page, pageTotal), 600);
+  });
+
+  // Closing the reader within the debounce window must not drop the last page;
+  // cancel the pending timer and persist the final position immediately.
+  onDestroy(() => {
+    clearTimeout(saveTimer);
+    libraryStore.saveProgress(galleryId, current + 1, pageTotal);
   });
 
   $effect(() => {

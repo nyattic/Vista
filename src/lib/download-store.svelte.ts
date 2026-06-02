@@ -1,4 +1,4 @@
-import { listen } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { downloadGallery, cancelDownload, defaultDownloadDir } from './api';
 import { libraryStore } from './library-store.svelte';
 import { settingsStore } from './settings-store.svelte';
@@ -24,69 +24,44 @@ interface ProgressEvent {
   total: number;
 }
 
-interface DoneEvent {
-  id: number;
-  folder: string;
-  total: number;
-  failed: number;
-  failedPages: number[];
-  skipped: number;
-}
-
-interface CancelledEvent {
-  id: number;
-  done: number;
-  total: number;
-}
-
 class DownloadStore {
   jobs = $state<Record<number, DownloadState>>({});
   private started = false;
+  private unlisteners: UnlistenFn[] = [];
+  // Ids the user asked to cancel. The awaited `downloadGallery` promise is the
+  // single source of truth for a job's terminal state; this set tells us whether
+  // that resolution should be read as "paused" (user cancelled) or "finished".
+  private cancelRequested = new Set<number>();
 
-  init() {
+  async init() {
     if (this.started) return;
     this.started = true;
+    try {
+      // Only progress is event-driven. Completion/cancellation is decided by the
+      // `start()` promise so the two can never race to write the terminal state.
+      const off = await listen<ProgressEvent>('download-progress', (e) => {
+        const { id, done, total } = e.payload;
+        const prev = this.jobs[id];
+        // Ignore strays for unknown or already-finalized jobs.
+        if (!prev || prev.finished) return;
+        this.patch(id, { ...prev, done, total });
+      });
+      this.unlisteners.push(off);
+    } catch (e) {
+      // Registration failed — allow a later retry rather than silently wedging.
+      this.started = false;
+      console.error('failed to register download listeners', e);
+    }
+  }
 
-    listen<ProgressEvent>('download-progress', (e) => {
-      const { id, done, total } = e.payload;
-      const prev = this.jobs[id];
-      if (!prev) return;
-      this.jobs = {
-        ...this.jobs,
-        [id]: { ...prev, done, total, finished: false, running: true, paused: false }
-      };
-    });
+  destroy() {
+    for (const off of this.unlisteners) off();
+    this.unlisteners = [];
+    this.started = false;
+  }
 
-    listen<DoneEvent>('download-done', (e) => {
-      const { id, folder, total, failed, failedPages, skipped } = e.payload;
-      const prev = this.jobs[id];
-      if (!prev) return;
-      libraryStore.markDownloaded(id);
-      this.jobs = {
-        ...this.jobs,
-        [id]: {
-          ...prev,
-          finished: true,
-          running: false,
-          paused: false,
-          folder,
-          failed,
-          failedPages,
-          skipped,
-          total: total ?? prev.total
-        }
-      };
-    });
-
-    listen<CancelledEvent>('download-cancelled', (e) => {
-      const { id, done, total } = e.payload;
-      const prev = this.jobs[id];
-      if (!prev) return;
-      this.jobs = {
-        ...this.jobs,
-        [id]: { ...prev, done, total, finished: false, running: false, paused: true }
-      };
-    });
+  private patch(id: number, next: DownloadState) {
+    this.jobs = { ...this.jobs, [id]: next };
   }
 
   get(id: number): DownloadState | undefined {
@@ -107,18 +82,15 @@ class DownloadStore {
     const retryPages = pages?.filter((p) => Number.isFinite(p) && p > 0) ?? [];
 
     if (retryPages.length === 0 && libraryStore.isDownloaded(id)) {
-      this.jobs = {
-        ...this.jobs,
-        [id]: {
-          ...(cur ?? { id, title, done: 0, total: 0 }),
-          id,
-          title,
-          finished: true,
-          running: false,
-          paused: false,
-          error: 'already downloaded'
-        }
-      };
+      this.patch(id, {
+        ...(cur ?? { id, title, done: 0, total: 0 }),
+        id,
+        title,
+        finished: true,
+        running: false,
+        paused: false,
+        error: 'already downloaded'
+      });
       return;
     }
 
@@ -128,44 +100,61 @@ class DownloadStore {
       if (dir) settingsStore.setDownloadDir(dir);
     }
     if (!dir) {
-      this.jobs = {
-        ...this.jobs,
-        [id]: {
-          id,
-          title,
-          done: 0,
-          total: 0,
-          finished: true,
-          running: false,
-          paused: false,
-          error: 'no download folder'
-        }
-      };
+      this.patch(id, {
+        id,
+        title,
+        done: 0,
+        total: 0,
+        finished: true,
+        running: false,
+        paused: false,
+        error: 'no download folder'
+      });
       return;
     }
 
-    this.jobs = {
-      ...this.jobs,
-      [id]: {
-        id,
-        title,
-        done: cur?.done ?? 0,
-        total: cur?.total ?? 0,
-        finished: false,
-        running: true,
-        paused: false,
-        failedPages: retryPages.length ? retryPages : cur?.failedPages,
-        error: undefined
-      }
-    };
+    // Clear any cancel intent left over from a previous (paused) run of this id.
+    this.cancelRequested.delete(id);
+    this.patch(id, {
+      id,
+      title,
+      done: cur?.done ?? 0,
+      total: cur?.total ?? 0,
+      finished: false,
+      running: true,
+      paused: false,
+      failedPages: retryPages.length ? retryPages : cur?.failedPages,
+      error: undefined
+    });
     try {
       const result = await downloadGallery(id, dir, retryPages.length ? retryPages : undefined);
-      libraryStore.markDownloaded(id);
-      const prev = this.jobs[id];
-      this.jobs = {
-        ...this.jobs,
-        [id]: {
-          ...(prev ?? { id, title, done: 0, total: result.total }),
+      const prev = this.jobs[id] ?? { id, title, done: 0, total: result.total };
+      // `delete` returns true iff a cancel was requested for this run.
+      const cancelled = this.cancelRequested.delete(id);
+      if (cancelled) {
+        // The backend honored the cancel mid-flight: this is a pause, not a
+        // completion, so the library is left un-marked and the job stays resumable.
+        this.patch(id, {
+          ...prev,
+          id,
+          title,
+          finished: false,
+          running: false,
+          paused: true,
+          folder: result.folder,
+          failed: result.failed,
+          failedPages: result.failedPages,
+          skipped: result.skipped,
+          total: result.total,
+          done: result.done,
+          error: undefined
+        });
+      } else {
+        libraryStore.markDownloaded(id);
+        this.patch(id, {
+          ...prev,
+          id,
+          title,
           finished: true,
           running: false,
           paused: false,
@@ -174,27 +163,31 @@ class DownloadStore {
           failedPages: result.failedPages,
           skipped: result.skipped,
           total: result.total,
-          done: result.done
-        }
-      };
+          done: result.done,
+          error: undefined
+        });
+      }
     } catch (e) {
-      const prev = this.jobs[id];
-      this.jobs = {
-        ...this.jobs,
-        [id]: {
-          ...(prev ?? { id, title, done: 0, total: 0 }),
-          finished: true,
-          running: false,
-          paused: false,
-          error: String(e)
-        }
-      };
+      this.cancelRequested.delete(id);
+      const prev = this.jobs[id] ?? { id, title, done: 0, total: 0 };
+      this.patch(id, {
+        ...prev,
+        id,
+        title,
+        finished: true,
+        running: false,
+        paused: false,
+        error: String(e)
+      });
     }
   }
 
   async cancel(id: number) {
     const prev = this.jobs[id];
     if (!prev || !prev.running) return;
+    // Record intent before signaling the backend; the resolving `start()` promise
+    // reads this flag to settle the job as paused rather than finished/errored.
+    this.cancelRequested.add(id);
     await cancelDownload(id).catch(() => {});
   }
 

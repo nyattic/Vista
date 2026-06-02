@@ -5,19 +5,25 @@ import { PAGE_SIZE, type Gallery, type GalleryPage, type GalleryType, type SortO
 
 export type View = 'browse' | 'favorites' | 'history' | 'downloads';
 
-function isBlacklisted(g: Gallery, blacklist: string[]): boolean {
-  if (!blacklist.length) return false;
-  const tagHit = g.tags.some((t) => {
-    const raw = t.toLowerCase();
-    const label = parseTag(t).label.toLowerCase();
-    return blacklist.some((b) => raw.includes(b) || label.includes(b));
-  });
-  if (tagHit) return true;
-  const fields = [...g.artists, ...g.groups, ...g.series, ...g.characters];
-  return fields.some((f) => {
-    const v = f.toLowerCase();
-    return blacklist.some((b) => v.includes(b));
-  });
+// Normalize a tag/term to a canonical form so blacklist entries match tags
+// regardless of case or underscore-vs-space spelling.
+function normalizeTerm(s: string): string {
+  return s.toLowerCase().replace(/_/g, ' ').trim();
+}
+
+// Whole-token match: a gallery is hidden only when one of its tags (or its
+// label without namespace) or a credited name equals a blacklist term exactly.
+// Substring matching is deliberately avoided so "anal" can't hide "analog".
+function isBlacklisted(g: Gallery, terms: Set<string>): boolean {
+  if (!terms.size) return false;
+  for (const t of g.tags) {
+    if (terms.has(normalizeTerm(t)) || terms.has(normalizeTerm(parseTag(t).label))) return true;
+  }
+  for (const f of g.artists) if (terms.has(normalizeTerm(f))) return true;
+  for (const f of g.groups) if (terms.has(normalizeTerm(f))) return true;
+  for (const f of g.series) if (terms.has(normalizeTerm(f))) return true;
+  for (const f of g.characters) if (terms.has(normalizeTerm(f))) return true;
+  return false;
 }
 
 class GalleryStore {
@@ -33,17 +39,26 @@ class GalleryStore {
   loading = $state(false);
   error = $state<string | null>(null);
   selectedId = $state<number | null>(null);
+  // Bumped to ask the grid to move DOM focus onto the current selection. Only
+  // raised for keyboard-initiated page flips, never for plain loads.
+  focusRequest = $state(0);
+
+  // Memoized filtered list. As a $derived it recomputes only when items or the
+  // blacklist change, instead of on every read like the previous getter.
+  visible: Gallery[] = $derived.by(() => {
+    const terms = new Set(settingsStore.blacklist.map(normalizeTerm).filter(Boolean));
+    if (!terms.size) return this.items;
+    return this.items.filter((g) => !isBlacklisted(g, terms));
+  });
 
   private token = 0;
   private localItems: Gallery[] = [];
   private loadTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingSelect: 'first' | 'last' = 'first';
+  private pendingFocus = false;
 
   get searching(): boolean {
     return this.activeQuery.length > 0;
-  }
-
-  get visible(): Gallery[] {
-    return this.items.filter((g) => !isBlacklisted(g, settingsStore.blacklist));
   }
 
   get selected(): Gallery | null {
@@ -86,8 +101,10 @@ class GalleryStore {
     this.load(1);
   }
 
-  load(p: number) {
+  load(p: number, opts?: { select?: 'first' | 'last'; focus?: boolean }) {
     this.page = p;
+    this.pendingSelect = opts?.select ?? 'first';
+    this.pendingFocus = opts?.focus ?? false;
     this.loading = true;
     this.error = null;
     clearTimeout(this.loadTimer);
@@ -104,7 +121,13 @@ class GalleryStore {
       this.total = res.total;
       this.totalPages = res.totalPages;
       const vis = this.visible;
-      this.selectedId = vis.length ? vis[0].id : null;
+      if (vis.length) {
+        const target = this.pendingSelect === 'last' ? vis[vis.length - 1] : vis[0];
+        this.selectedId = target.id;
+        if (this.pendingFocus) this.focusRequest++;
+      } else {
+        this.selectedId = null;
+      }
     } catch (e) {
       if (t !== this.token) return;
       this.error = String(e);
@@ -113,7 +136,10 @@ class GalleryStore {
       this.totalPages = 1;
       this.selectedId = null;
     } finally {
-      if (t === this.token) this.loading = false;
+      if (t === this.token) {
+        this.loading = false;
+        this.pendingFocus = false;
+      }
     }
   }
 
@@ -124,12 +150,14 @@ class GalleryStore {
     this.load(clamped);
   }
 
-  next() {
-    if (this.page < this.totalPages) this.load(this.page + 1);
+  // `edge` is set when the flip is triggered by arrow-key navigation past the
+  // edge of the grid, so the landing card is selected and focused.
+  next(edge = false) {
+    if (this.page < this.totalPages) this.load(this.page + 1, { select: 'first', focus: edge });
   }
 
-  prev() {
-    if (this.page > 1) this.load(this.page - 1);
+  prev(edge = false) {
+    if (this.page > 1) this.load(this.page - 1, { select: edge ? 'last' : 'first', focus: edge });
   }
 
   setType(t: GalleryType) {
