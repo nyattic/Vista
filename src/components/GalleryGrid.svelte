@@ -12,7 +12,7 @@
   function columns(): number {
     if (!container) return 1;
     const width = container.clientWidth - 24;
-    return Math.max(1, Math.floor(width / (settingsStore.tileMin + 10)));
+    return Math.max(1, Math.floor((width + 10) / (settingsStore.tileMin + 10)));
   }
 
   async function focusCard(id: number | null) {

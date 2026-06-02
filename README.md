@@ -1,51 +1,102 @@
 # Vista
 
-A fast, cross-platform desktop gallery client for hitomi.la, built with Rust + Tauri and Svelte.
-
 ![Release](https://img.shields.io/github/v/release/nyattic/Vista?style=flat&color=6366f1)
 ![Downloads](https://img.shields.io/github/downloads/nyattic/Vista/total?style=flat&color=10b981)
 ![Last Commit](https://img.shields.io/github/last-commit/nyattic/Vista?style=flat&color=f59e0b)
 ![License](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat)
 
+A fast, cross-platform desktop gallery client for hitomi.la.
+
+Browse in a small, focused window — no web browser, no ads. Favorites,
+history, reading progress, and downloads all stay on your machine.
+
 ## Features
 
-- **Browse & search** — type, language, and sort filters, plus multi-term queries with namespaces (`artist:`, `female:`, `series:`, …) and live tag suggestions.
-- **Reader** — continuous, paged, and two-page spread layouts with left-to-right / right-to-left direction and next-page prefetch.
-- **Library** — favorites, view history, and per-gallery reading progress, stored locally in SQLite.
-- **Downloads** — a download queue with pause, resume, cancel, and retry.
-- **Caching** — on-disk image cache with a configurable size limit and automatic eviction.
-- **Quality of life** — tag blacklist, light/dark themes, and built-in auto-update.
+- Browse by type, language, and time period, with popular and latest sorts
+- Multi-term search with namespaces (`artist:`, `female:`, `series:`, …),
+  combined with AND, plus live tag suggestions and search history
+- Built-in reader with continuous, paged, and two-page spread layouts,
+  left-to-right / right-to-left direction, and next-page prefetch
+- Favorites, view history, and per-gallery reading progress, stored
+  locally in SQLite
+- Download queue with pause, resume, cancel, and retry
+- On-disk image cache with a configurable size limit and automatic eviction
+- Tag blacklist, light and dark themes, and built-in auto-update
 
-## Tech stack
+## Installation
 
-- **Backend:** Rust, Tauri 2, reqwest, rusqlite
-- **Frontend:** Svelte 5, TypeScript, Tailwind CSS, Vite
+Download the latest build for your platform from the
+[Releases](https://github.com/nyattic/Vista/releases) page:
 
-## Development
+- **Windows** — `.exe` installer
+- **macOS** — `.dmg`
+- **Linux** — `.AppImage`
 
-Requires [Node.js 24](https://nodejs.org), a [Rust toolchain](https://rustup.rs), and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform.
+## Usage
 
-```bash
+1. Launch Vista.
+2. Filter by type, language, and time period from the toolbar, or search
+   with the bar at the top.
+3. Click a gallery to inspect it in the sidebar; double-click (or press
+   Enter) to open the reader.
+4. Favorite, download, or copy a link from the sidebar. Track downloads
+   from the panel in the header.
+5. Open Settings to change the reader layout, theme, default language,
+   blacklist, download folder, and cache size.
+
+## Search syntax
+
+Separate terms with spaces; every term must match (AND). Use namespaces to
+target a field, and underscores for multi-word values:
+
+```
+artist:naoki_urasawa language:korean female:sole_female
+```
+
+Supported prefixes: `tag:`, `female:`, `male:`, `artist:`, `group:`,
+`series:`, `character:`, `type:`, `language:`. A term with no prefix is
+treated as a tag.
+
+## Keyboard shortcuts
+
+Browsing:
+
+| Key | Action |
+| --- | --- |
+| `←` `→` | Move selection left / right (flips the page at the edge) |
+| `↑` `↓` | Move selection up / down a row |
+| `Enter` | Open the selected gallery in the reader |
+| `Esc` | Close the reader, settings, or a dialog |
+
+Search box:
+
+| Key | Action |
+| --- | --- |
+| `↑` `↓` | Move through tag suggestions and history |
+| `Tab` | Insert the highlighted tag |
+| `Enter` | Run the search (or pick a history entry) |
+| `Esc` | Dismiss the suggestions |
+
+Reader:
+
+| Key | Action |
+| --- | --- |
+| `←` `→` | Previous / next page (paged and spread; respects direction) |
+| `Space` | Next page |
+| `Home` `End` | Jump to the first / last page |
+| `Esc` | Close the reader (or exit zoom) |
+
+## Building from source
+
+Requires [Node.js 24+](https://nodejs.org/), [Rust](https://rustup.rs/),
+and the platform dependencies for [Tauri 2](https://v2.tauri.app/start/prerequisites/).
+
+```sh
 npm install
-npm run tauri dev      # run the app in development
+npm run tauri dev      # run in development
 npm run tauri build    # produce a release bundle
-npm run check          # type-check the frontend
 ```
-
-Rust checks and tests live under `src-tauri`:
-
-```bash
-cd src-tauri
-cargo clippy --all-targets
-cargo test
-```
-
-## Releases
-
-Pushing a `v*` tag (e.g. `v0.1.1`) triggers the release workflow, which builds signed bundles for Windows, macOS, and Linux and publishes them to GitHub Releases. Installed apps then update themselves through the Tauri updater.
-
-Signing requires a `TAURI_SIGNING_PRIVATE_KEY` repository secret; the matching public key is committed in `src-tauri/tauri.conf.json`.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Not affiliated with or endorsed by hitomi.la.

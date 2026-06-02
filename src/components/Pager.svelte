@@ -23,7 +23,7 @@
 >
   <button
     class="grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text disabled:pointer-events-none disabled:opacity-30"
-    disabled={atStart || galleryStore.loading}
+    disabled={atStart}
     onclick={() => galleryStore.goToPage(1)}
     aria-label="First page"
     title="First page"
@@ -32,7 +32,7 @@
   </button>
   <button
     class="grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text disabled:pointer-events-none disabled:opacity-30"
-    disabled={atStart || galleryStore.loading}
+    disabled={atStart}
     onclick={() => galleryStore.prev()}
     aria-label="Previous"
   >
@@ -52,7 +52,7 @@
 
   <button
     class="grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text disabled:pointer-events-none disabled:opacity-30"
-    disabled={atEnd || galleryStore.loading}
+    disabled={atEnd}
     onclick={() => galleryStore.next()}
     aria-label="Next"
   >
@@ -60,7 +60,7 @@
   </button>
   <button
     class="grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text disabled:pointer-events-none disabled:opacity-30"
-    disabled={atEnd || galleryStore.loading}
+    disabled={atEnd}
     onclick={() => galleryStore.goToPage(galleryStore.totalPages)}
     aria-label="Last page"
     title="Last page"

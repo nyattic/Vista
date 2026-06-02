@@ -4,7 +4,7 @@
   import { settingsStore, type Theme } from '$lib/settings-store.svelte';
   import { galleryStore } from '$lib/gallery-store.svelte';
   import { updateStore } from '$lib/update-store.svelte';
-  import { clearImageCache, imageCacheSize } from '$lib/api';
+  import { clearImageCache, imageCacheSize, defaultDownloadDir } from '$lib/api';
   import { LANGUAGES, type Language } from '$lib/types';
   import Icon from './Icon.svelte';
 
@@ -39,6 +39,7 @@
 
   let newTag = $state('');
   let cacheBytes = $state<number | null>(null);
+  let defaultDir = $state('');
 
   function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`;
@@ -51,7 +52,10 @@
     cacheBytes = await imageCacheSize();
   }
 
-  onMount(refreshCache);
+  onMount(async () => {
+    refreshCache();
+    defaultDir = (await defaultDownloadDir()) ?? '';
+  });
 
   function selectLanguage(l: Language) {
     settingsStore.setLanguage(l);
@@ -244,9 +248,9 @@
               <div class="flex items-center gap-1.5">
                 <div
                   class="min-w-0 flex-1 truncate rounded-[3px] border border-room-line bg-room-bg px-2.5 py-1.5 font-mono text-[11px] text-room-text-mid"
-                  title={settingsStore.downloadDir}
+                  title={settingsStore.downloadDir || defaultDir}
                 >
-                  {settingsStore.downloadDir || '(system default)'}
+                  {settingsStore.downloadDir || defaultDir || '…'}
                 </div>
                 <button
                   class="flex items-center gap-1.5 rounded-[3px] border border-room-line px-3 py-1.5 text-[12px] text-room-text-mid hover:border-room-line-strong hover:text-room-text"
@@ -261,6 +265,11 @@
                   >
                 {/if}
               </div>
+              {#if !settingsStore.downloadDir}
+                <p class="mt-1.5 text-[11px] text-room-text-low">
+                  Your system Downloads folder, used until you choose another.
+                </p>
+              {/if}
             </section>
 
             <section>

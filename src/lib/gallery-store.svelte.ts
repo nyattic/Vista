@@ -36,6 +36,7 @@ class GalleryStore {
 
   private token = 0;
   private localItems: Gallery[] = [];
+  private loadTimer: ReturnType<typeof setTimeout> | undefined;
 
   get searching(): boolean {
     return this.activeQuery.length > 0;
@@ -74,10 +75,16 @@ class GalleryStore {
     this.load(1);
   }
 
-  async load(p: number) {
-    const t = ++this.token;
+  load(p: number) {
+    this.page = p;
     this.loading = true;
     this.error = null;
+    clearTimeout(this.loadTimer);
+    this.loadTimer = setTimeout(() => void this.runLoad(p), 130);
+  }
+
+  private async runLoad(p: number) {
+    const t = ++this.token;
     try {
       const res = await this.fetchPage(p);
       if (t !== this.token) return;
