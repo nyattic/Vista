@@ -205,6 +205,30 @@ impl HitomiClient {
             return Ok(self.paginate_ids(ids, page).await);
         }
 
+        if let Some(period) = sort.popular_period() {
+            if gtype != GalleryType::All {
+                let lang = if language.is_empty() { "all" } else { language };
+                let popular_url = format!(
+                    "https://{}/popular/{}-{}.nozomi",
+                    config::LTN_DOMAIN,
+                    period,
+                    lang
+                );
+                let type_url = nozomi_url_from_args("type", gtype.slug(), "all");
+                let popular_ids = fetch_all_gallery_ids(&self.http, &popular_url).await?;
+                let type_set: HashSet<i64> = fetch_all_gallery_ids(&self.http, &type_url)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect();
+                let ids: Vec<i64> = popular_ids
+                    .into_iter()
+                    .filter(|id| type_set.contains(id))
+                    .collect();
+                return Ok(self.paginate_ids(unique_preserve_order(ids), page).await);
+            }
+        }
+
         let urls = build_browse_nozomi_urls(gtype, sort, language);
         let mut last_err = AppError::Other("all nozomi endpoints failed".into());
 
@@ -615,6 +639,16 @@ mod tests {
                 .iter()
                 .all(|g| g.language.as_deref() == Some("korean")),
             "all items should be korean"
+        );
+
+        let popular = client
+            .fetch_galleries(1, GalleryType::Manga, SortOrder::Week, "english")
+            .await
+            .expect("popular manga browse failed");
+        println!("manga+week+english: {} items", popular.items.len());
+        assert!(
+            popular.items.iter().all(|g| g.gtype == "manga"),
+            "all popular items should be manga"
         );
     }
 
