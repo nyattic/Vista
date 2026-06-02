@@ -2,7 +2,10 @@
 
 A fast, cross-platform desktop gallery client for hitomi.la, built with Rust + Tauri and Svelte.
 
-![CI](https://github.com/nyattic/Vista/actions/workflows/ci.yml/badge.svg)
+![Release](https://img.shields.io/github/v/release/nyattic/Vista?style=flat&color=6366f1)
+![Downloads](https://img.shields.io/github/downloads/nyattic/Vista/total?style=flat&color=10b981)
+![Last Commit](https://img.shields.io/github/last-commit/nyattic/Vista?style=flat&color=f59e0b)
+![License](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat)
 
 ## Features
 
