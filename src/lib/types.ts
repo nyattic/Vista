@@ -81,4 +81,6 @@ export const LANGUAGES: { value: Language; label: string }[] = [
   { value: 'chinese', label: 'Chinese' }
 ];
 
-export const PAGE_SIZE = 20;
+export const DEFAULT_PAGE_SIZE = 20;
+export const MIN_PAGE_SIZE = 12;
+export const MAX_PAGE_SIZE = 80;

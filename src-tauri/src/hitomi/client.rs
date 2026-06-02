@@ -236,6 +236,7 @@ impl HitomiClient {
     pub async fn fetch_galleries(
         &self,
         page: usize,
+        page_size: usize,
         gtype: GalleryType,
         sort: SortOrder,
         language: &str,
@@ -247,7 +248,7 @@ impl HitomiClient {
                 format!("language:{language}"),
             ];
             let ids = unique_sorted_desc(self.fetch_ids_for_constraints(constraints).await?);
-            return Ok(self.paginate_ids(ids, page).await);
+            return Ok(self.paginate_ids(ids, page, page_size).await);
         }
 
         if let Some(period) = sort.popular_period() {
@@ -269,7 +270,9 @@ impl HitomiClient {
                     .into_iter()
                     .filter(|id| type_set.contains(id))
                     .collect();
-                return Ok(self.paginate_ids(unique_preserve_order(ids), page).await);
+                return Ok(self
+                    .paginate_ids(unique_preserve_order(ids), page, page_size)
+                    .await);
             }
         }
 
@@ -277,7 +280,7 @@ impl HitomiClient {
         let mut last_err = AppError::Other("all nozomi endpoints failed".into());
 
         for url in &urls {
-            match fetch_gallery_ids(&self.http, url, page, config::PAGE_SIZE).await {
+            match fetch_gallery_ids(&self.http, url, page, page_size).await {
                 Ok((ids, total)) => {
                     if ids.is_empty() && total.is_none() {
                         continue;
@@ -285,7 +288,7 @@ impl HitomiClient {
                     let ordered = unique_preserve_order(ids);
                     let items = self.load_galleries_in_parallel(ordered).await;
                     let total = total.unwrap_or(items.len());
-                    let total_pages = total.div_ceil(config::PAGE_SIZE).max(1);
+                    let total_pages = total.div_ceil(page_size).max(1);
                     return Ok(GalleryPage {
                         items,
                         total,
@@ -303,21 +306,22 @@ impl HitomiClient {
         &self,
         query: &str,
         page: usize,
+        page_size: usize,
         language: &str,
     ) -> AppResult<GalleryPage> {
         let ids = self.resolve_search_ids(query, language).await?;
-        Ok(self.paginate_ids(ids, page).await)
+        Ok(self.paginate_ids(ids, page, page_size).await)
     }
 
-    async fn paginate_ids(&self, ids: Vec<i64>, page: usize) -> GalleryPage {
+    async fn paginate_ids(&self, ids: Vec<i64>, page: usize, page_size: usize) -> GalleryPage {
         let total = ids.len();
-        let total_pages = total.div_ceil(config::PAGE_SIZE).max(1);
+        let total_pages = total.div_ceil(page_size).max(1);
 
-        let start = page.saturating_sub(1) * config::PAGE_SIZE;
+        let start = page.saturating_sub(1) * page_size;
         let items = if start >= total {
             Vec::new()
         } else {
-            let end = (start + config::PAGE_SIZE).min(total);
+            let end = (start + page_size).min(total);
             self.load_galleries_in_parallel(ids[start..end].to_vec())
                 .await
         };
@@ -762,12 +766,20 @@ fn existing_page(folder: &std::path::Path, index: usize) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    const TEST_PAGE_SIZE: usize = 20;
+
     #[tokio::test]
     #[ignore]
     async fn live_type_language() {
         let client = HitomiClient::new();
         let page = client
-            .fetch_galleries(1, GalleryType::Anime, SortOrder::Latest, "korean")
+            .fetch_galleries(
+                1,
+                TEST_PAGE_SIZE,
+                GalleryType::Anime,
+                SortOrder::Latest,
+                "korean",
+            )
             .await
             .expect("anime + korean browse failed");
         println!(
@@ -787,7 +799,13 @@ mod tests {
         );
 
         let popular = client
-            .fetch_galleries(1, GalleryType::Manga, SortOrder::Week, "english")
+            .fetch_galleries(
+                1,
+                TEST_PAGE_SIZE,
+                GalleryType::Manga,
+                SortOrder::Week,
+                "english",
+            )
             .await
             .expect("popular manga browse failed");
         println!("manga+week+english: {} items", popular.items.len());
@@ -807,7 +825,13 @@ mod tests {
         assert!(!gg.m.is_empty(), "gg mappings should not be empty");
 
         let page = client
-            .fetch_galleries(1, GalleryType::All, SortOrder::Latest, "english")
+            .fetch_galleries(
+                1,
+                TEST_PAGE_SIZE,
+                GalleryType::All,
+                SortOrder::Latest,
+                "english",
+            )
             .await
             .expect("fetch_galleries failed");
         println!(
@@ -863,7 +887,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
 
         let kr = client
-            .fetch_galleries(1, GalleryType::All, SortOrder::Latest, "korean")
+            .fetch_galleries(
+                1,
+                TEST_PAGE_SIZE,
+                GalleryType::All,
+                SortOrder::Latest,
+                "korean",
+            )
             .await
             .expect("korean browse failed");
         println!("korean page 1: {} items, langs:", kr.items.len());
@@ -905,7 +935,7 @@ mod tests {
     async fn live_search() {
         let client = HitomiClient::new();
         let result = client
-            .search_galleries("male:furry", 3, "all")
+            .search_galleries("male:furry", 3, TEST_PAGE_SIZE, "all")
             .await
             .expect("search failed");
         println!(

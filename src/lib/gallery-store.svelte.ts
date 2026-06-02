@@ -2,7 +2,15 @@ import { fetchGalleries, searchGalleries, listFavorites, listHistory, listDownlo
 import { settingsStore } from './settings-store.svelte';
 import { friendlyError } from './errors';
 import { parseTag } from './format';
-import { PAGE_SIZE, type Gallery, type GalleryPage, type GalleryType, type SortOrder } from './types';
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  MIN_PAGE_SIZE,
+  type Gallery,
+  type GalleryPage,
+  type GalleryType,
+  type SortOrder
+} from './types';
 
 export type View = 'browse' | 'favorites' | 'history' | 'downloads';
 
@@ -35,6 +43,7 @@ class GalleryStore {
   query = $state('');
   activeQuery = $state('');
   page = $state(1);
+  pageSize = $state(DEFAULT_PAGE_SIZE);
   totalPages = $state(1);
   total = $state(0);
   loading = $state(false);
@@ -83,15 +92,15 @@ class GalleryStore {
         }
       }
       const total = this.localItems.length;
-      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const totalPages = Math.max(1, Math.ceil(total / this.pageSize));
       const page = Math.max(1, Math.min(totalPages, p));
-      const start = (page - 1) * PAGE_SIZE;
-      const items = this.localItems.slice(start, start + PAGE_SIZE);
+      const start = (page - 1) * this.pageSize;
+      const items = this.localItems.slice(start, start + this.pageSize);
       return { items, total, totalPages, page };
     }
     return this.activeQuery
-      ? searchGalleries(this.activeQuery, p, settingsStore.language)
-      : fetchGalleries(p, this.gtype, this.sort, settingsStore.language);
+      ? searchGalleries(this.activeQuery, p, settingsStore.language, this.pageSize)
+      : fetchGalleries(p, this.gtype, this.sort, settingsStore.language, this.pageSize);
   }
 
   setView(v: View) {
@@ -149,6 +158,16 @@ class GalleryStore {
     const clamped = Math.max(1, Math.min(this.totalPages, Math.floor(p)));
     if (clamped === this.page && !this.error) return;
     this.load(clamped);
+  }
+
+  setPageSize(size: number) {
+    if (!Number.isFinite(size)) return;
+    const next = Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, Math.floor(size)));
+    if (next === this.pageSize) return;
+    const firstIndex = (this.page - 1) * this.pageSize;
+    this.pageSize = next;
+    const nextPage = Math.floor(firstIndex / next) + 1;
+    this.load(nextPage);
   }
 
   // `edge` is set when the flip is triggered by arrow-key navigation past the

@@ -1,18 +1,35 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { tick, untrack } from 'svelte';
   import { galleryStore } from '$lib/gallery-store.svelte';
   import { readerStore } from '$lib/reader-store.svelte';
   import { settingsStore } from '$lib/settings-store.svelte';
+  import { MAX_PAGE_SIZE, MIN_PAGE_SIZE } from '$lib/types';
   import type { Gallery } from '$lib/types';
   import GalleryCard from './GalleryCard.svelte';
   import Spinner from './Spinner.svelte';
 
   let container = $state<HTMLDivElement | null>(null);
+  const GRID_PADDING = 24;
+  const GRID_GAP = 10;
+  const CARD_TEXT_HEIGHT = 86;
 
   function columns(): number {
     if (!container) return 1;
-    const width = container.clientWidth - 24;
-    return Math.max(1, Math.floor((width + 10) / (settingsStore.tileMin + 10)));
+    const width = container.clientWidth - GRID_PADDING;
+    return Math.max(1, Math.floor((width + GRID_GAP) / (settingsStore.tileMin + GRID_GAP)));
+  }
+
+  function pageSizeForContainer(): number {
+    if (!container) return galleryStore.pageSize;
+    const cols = columns();
+    const tileWidth =
+      (container.clientWidth - GRID_PADDING - GRID_GAP * Math.max(0, cols - 1)) / cols;
+    const measuredCard = container.querySelector<HTMLButtonElement>('[data-card]');
+    const cardHeight = measuredCard?.getBoundingClientRect().height || tileWidth * (4 / 3) + CARD_TEXT_HEIGHT;
+    const availableHeight = container.clientHeight - GRID_PADDING;
+    const rows = Math.max(1, Math.floor((availableHeight + GRID_GAP) / (cardHeight + GRID_GAP)));
+    return Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, cols * rows));
   }
 
   async function focusCard(id: number | null) {
@@ -57,6 +74,27 @@
   $effect(() => {
     galleryStore.focusRequest;
     untrack(() => focusCard(galleryStore.selectedId));
+  });
+
+  onMount(() => {
+    if (!container) return;
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => galleryStore.setPageSize(pageSizeForContainer()));
+    };
+    const ro = new ResizeObserver(update);
+    ro.observe(container);
+    update();
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
+  });
+
+  $effect(() => {
+    settingsStore.tileMin;
+    galleryStore.setPageSize(pageSizeForContainer());
   });
 </script>
 

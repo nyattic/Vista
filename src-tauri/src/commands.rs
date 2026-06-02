@@ -11,6 +11,8 @@ const MAX_QUERY_CHARS: usize = 300;
 const MAX_QUERY_TERMS: usize = 12;
 const MAX_SUGGEST_CHARS: usize = 80;
 const MAX_CACHE_LIMIT_BYTES: u64 = 20 * 1024 * 1024 * 1024;
+const MIN_PAGE_SIZE: usize = 12;
+const MAX_PAGE_SIZE: usize = 80;
 
 fn validate_id(id: i64) -> AppResult<i64> {
     if id <= 0 {
@@ -21,6 +23,10 @@ fn validate_id(id: i64) -> AppResult<i64> {
 
 fn validate_page(page: usize) -> usize {
     page.clamp(1, 100_000)
+}
+
+fn validate_page_size(page_size: usize) -> usize {
+    page_size.clamp(MIN_PAGE_SIZE, MAX_PAGE_SIZE)
 }
 
 fn validate_language(language: &str) -> AppResult<()> {
@@ -110,12 +116,15 @@ pub async fn fetch_galleries(
     gtype: String,
     sort: String,
     language: String,
+    page_size: usize,
 ) -> AppResult<GalleryPage> {
     validate_language(&language)?;
     let page = validate_page(page);
+    let page_size = validate_page_size(page_size);
     client
         .fetch_galleries(
             page,
+            page_size,
             GalleryType::from_str(&gtype),
             SortOrder::from_str(&sort),
             &language,
@@ -138,10 +147,18 @@ pub async fn search_galleries(
     query: String,
     page: usize,
     language: String,
+    page_size: usize,
 ) -> AppResult<GalleryPage> {
     validate_language(&language)?;
     validate_query(&query)?;
-    client.search_galleries(&query, validate_page(page), &language).await
+    client
+        .search_galleries(
+            &query,
+            validate_page(page),
+            validate_page_size(page_size),
+            &language,
+        )
+        .await
 }
 
 #[tauri::command]

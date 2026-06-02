@@ -15,9 +15,10 @@ export function fetchGalleries(
   page: number,
   gtype: GalleryType,
   sort: SortOrder,
-  language: Language
+  language: Language,
+  pageSize: number
 ): Promise<GalleryPage> {
-  return invoke('fetch_galleries', { page, gtype, sort, language });
+  return invoke('fetch_galleries', { page, gtype, sort, language, pageSize });
 }
 
 export function fetchGallery(id: number): Promise<Gallery> {
@@ -27,9 +28,10 @@ export function fetchGallery(id: number): Promise<Gallery> {
 export function searchGalleries(
   query: string,
   page: number,
-  language: Language
+  language: Language,
+  pageSize: number
 ): Promise<GalleryPage> {
-  return invoke('search_galleries', { query, page, language });
+  return invoke('search_galleries', { query, page, language, pageSize });
 }
 
 export interface Suggestion {
