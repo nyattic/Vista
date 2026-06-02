@@ -1,0 +1,75 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'IBM Plex Sans', system-ui, 'Noto Sans KR', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Menlo', monospace;
+
+  --color-room-floor: #0e0e10;
+  --color-room-bg: #1a1a1c;
+  --color-room-panel: #1f1f21;
+  --color-room-panel-hi: #252527;
+  --color-room-line: #2e2e30;
+  --color-room-line-strong: #3a3a3c;
+  --color-room-text: #d6d6d8;
+  --color-room-text-mid: #8a8a8d;
+  --color-room-text-low: #5a5a5d;
+  --color-room-accent: #9eb8c9;
+  --color-room-fav: #c89065;
+  --color-room-male: #6c93c7;
+  --color-room-female: #c77fa6;
+}
+
+:root[data-theme='light'] {
+  --color-room-floor: #ffffff;
+  --color-room-bg: #f5f5f7;
+  --color-room-panel: #ffffff;
+  --color-room-panel-hi: #ebebee;
+  --color-room-line: #e0e0e3;
+  --color-room-line-strong: #c2c2c6;
+  --color-room-text: #1c1c1e;
+  --color-room-text-mid: #5c5c60;
+  --color-room-text-low: #9c9ca0;
+  --color-room-accent: #4a7793;
+  --color-room-fav: #b06a3e;
+  --color-room-male: #3f6fab;
+  --color-room-female: #a8537f;
+}
+
+:root[data-motion='never'] *,
+:root[data-motion='never'] *::before,
+:root[data-motion='never'] *::after {
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--color-room-bg);
+  color: var(--color-room-text);
+  font-family: var(--font-sans);
+  overflow: hidden;
+}
+
+::selection {
+  background: rgba(158, 184, 201, 0.25);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-room-line);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-room-line-strong);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
