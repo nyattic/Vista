@@ -15,7 +15,6 @@
     { id: 'reader', label: 'Reader' },
     { id: 'content', label: 'Content' },
     { id: 'downloads', label: 'Downloads' },
-    { id: 'updates', label: 'Updates' },
     { id: 'about', label: 'About' }
   ] as const;
   type Section = (typeof sections)[number]['id'];
@@ -289,24 +288,33 @@
                 </button>
               </div>
             </section>
-          {:else if activeSection === 'updates'}
+          {:else if activeSection === 'about'}
+            <section class="flex flex-col gap-2">
+              <div class="text-[13px] text-room-text">Vista</div>
+              <div class="font-mono text-[11px] tabular-nums text-room-text-mid">
+                {updateStore.currentVersion ? `v${updateStore.currentVersion}` : ''}
+              </div>
+              <p class="text-[11.5px] leading-relaxed text-room-text-low">
+                A cross-platform gallery client built with Rust + Tauri + Svelte.
+              </p>
+            </section>
+
             <section>
               <div class="mb-2 text-[12px] text-room-text">Updates</div>
               <div class="flex items-center gap-2">
                 <span class="font-mono text-[11px] tabular-nums text-room-text-mid">
-                  {updateStore.currentVersion ? `v${updateStore.currentVersion}` : '…'}
                   {#if updateStore.status === 'checking'}
-                    · checking…
+                    checking…
                   {:else if updateStore.status === 'available'}
-                    · <span class="text-room-accent">v{updateStore.newVersion} available</span>
+                    <span class="text-room-accent">v{updateStore.newVersion} available</span>
                   {:else if updateStore.status === 'downloading'}
-                    · downloading {updateStore.percent}%
+                    downloading {updateStore.percent}%
                   {:else if updateStore.status === 'ready'}
-                    · restarting…
+                    restarting…
                   {:else if updateStore.status === 'uptodate'}
-                    · up to date
+                    up to date
                   {:else if updateStore.status === 'error'}
-                    · <span class="text-[#ff6b6b]">check failed</span>
+                    <span class="text-[#ff6b6b]">check failed</span>
                   {/if}
                 </span>
                 {#if updateStore.status === 'available'}
@@ -326,16 +334,6 @@
                   </button>
                 {/if}
               </div>
-            </section>
-          {:else if activeSection === 'about'}
-            <section class="flex flex-col gap-2">
-              <div class="text-[13px] text-room-text">Vista</div>
-              <div class="font-mono text-[11px] tabular-nums text-room-text-mid">
-                {updateStore.currentVersion ? `v${updateStore.currentVersion}` : ''}
-              </div>
-              <p class="text-[11.5px] leading-relaxed text-room-text-low">
-                A cross-platform gallery client built with Rust + Tauri + Svelte.
-              </p>
             </section>
           {/if}
         </div>
