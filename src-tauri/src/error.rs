@@ -8,9 +8,6 @@ pub enum AppError {
     #[error("http {status} for {url}")]
     Http { status: u16, url: String },
 
-    #[error("invalid url: {0}")]
-    InvalidUrl(String),
-
     #[error("decode error: {0}")]
     Decode(String),
 

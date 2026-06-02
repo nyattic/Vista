@@ -60,9 +60,7 @@ pub fn build_constraints(t: &SearchTerms) -> Vec<String> {
 }
 
 pub fn constraint_to_nozomi_url(constraint: &str) -> Option<String> {
-    let mut parts = constraint.splitn(2, ':');
-    let ctype = parts.next()?;
-    let value = parts.next()?;
+    let (ctype, value) = constraint.split_once(':')?;
     if value.is_empty() {
         return None;
     }

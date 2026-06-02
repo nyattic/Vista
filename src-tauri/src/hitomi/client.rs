@@ -316,23 +316,10 @@ impl HitomiClient {
         ];
         let mut field = "global";
         let mut term = last.as_str();
-        if let Some(idx) = last.find(':') {
-            let cand = &last[..idx];
+        if let Some((cand, rest)) = last.split_once(':') {
             if ALLOWED.contains(&cand) {
-                field = match cand {
-                    "global" => "global",
-                    "tag" => "tag",
-                    "female" => "female",
-                    "male" => "male",
-                    "language" => "language",
-                    "artist" => "artist",
-                    "group" => "group",
-                    "series" => "series",
-                    "character" => "character",
-                    "type" => "type",
-                    _ => "global",
-                };
-                term = &last[idx + 1..];
+                field = cand;
+                term = rest;
             }
         }
 
