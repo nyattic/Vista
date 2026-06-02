@@ -2,6 +2,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { downloadGallery, cancelDownload, defaultDownloadDir } from './api';
 import { libraryStore } from './library-store.svelte';
 import { settingsStore } from './settings-store.svelte';
+import { friendlyError } from './errors';
 
 export interface DownloadState {
   id: number;
@@ -177,7 +178,7 @@ class DownloadStore {
         finished: true,
         running: false,
         paused: false,
-        error: String(e)
+        error: friendlyError(e)
       });
     }
   }

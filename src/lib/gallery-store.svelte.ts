@@ -1,5 +1,6 @@
 import { fetchGalleries, searchGalleries, listFavorites, listHistory, listDownloads } from './api';
 import { settingsStore } from './settings-store.svelte';
+import { friendlyError } from './errors';
 import { parseTag } from './format';
 import { PAGE_SIZE, type Gallery, type GalleryPage, type GalleryType, type SortOrder } from './types';
 
@@ -130,7 +131,7 @@ class GalleryStore {
       }
     } catch (e) {
       if (t !== this.token) return;
-      this.error = String(e);
+      this.error = friendlyError(e);
       this.items = [];
       this.total = 0;
       this.totalPages = 1;

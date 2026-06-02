@@ -6,6 +6,7 @@
   import { updateStore } from '$lib/update-store.svelte';
   import { clearImageCache, imageCacheSize, defaultDownloadDir } from '$lib/api';
   import { LANGUAGES, type Language } from '$lib/types';
+  import { focusTrap } from '$lib/focus-trap';
   import Icon from './Icon.svelte';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -93,10 +94,12 @@
   }}
 >
   <div
-    class="grid h-[560px] max-h-[88vh] w-full max-w-2xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[6px] border border-room-line bg-room-panel shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
+    class="grid h-[560px] max-h-[88vh] w-full max-w-2xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[6px] border border-room-line bg-room-panel shadow-[0_16px_48px_rgba(0,0,0,0.5)] focus:outline-none"
     role="dialog"
     aria-modal="true"
     aria-label="Settings"
+    tabindex="-1"
+    use:focusTrap
   >
     <div class="flex items-center justify-between border-b border-room-line px-4 py-3">
       <div>

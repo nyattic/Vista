@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fileSrc, openDownloadFolder, removeHistory } from '$lib/api';
+  import { fileSrc, openDownloadFolder, removeHistory, removeDownload } from '$lib/api';
   import { galleryStore } from '$lib/gallery-store.svelte';
   import { readerStore } from '$lib/reader-store.svelte';
   import { downloadStore } from '$lib/download-store.svelte';
@@ -28,6 +28,14 @@
     if (!gallery) return;
     await removeHistory(gallery.id);
     if (galleryStore.view === 'history') galleryStore.load(1);
+  }
+
+  async function dropDownload() {
+    if (!gallery) return;
+    await removeDownload(gallery.id).catch(() => {});
+    libraryStore.markNotDownloaded(gallery.id);
+    downloadStore.remove(gallery.id);
+    if (galleryStore.view === 'downloads') galleryStore.load(1);
   }
 
   async function openFolder() {
@@ -208,6 +216,12 @@
               <button
                 class="text-left text-[11px] text-[#e0a458] hover:text-room-text"
                 onclick={retryFailed}>Retry {failedPages.length} failed page{failedPages.length === 1 ? '' : 's'}</button
+              >
+            {/if}
+            {#if galleryStore.view === 'downloads'}
+              <button
+                class="text-left text-[11px] text-room-text-low hover:text-room-text"
+                onclick={dropDownload}>Remove from downloads</button
               >
             {/if}
             {#if dl}
