@@ -195,6 +195,16 @@ impl HitomiClient {
         sort: SortOrder,
         language: &str,
     ) -> AppResult<GalleryPage> {
+        let lang_specific = !language.is_empty() && language != "all";
+        if sort == SortOrder::Latest && gtype != GalleryType::All && lang_specific {
+            let constraints = vec![
+                format!("type:{}", gtype.slug()),
+                format!("language:{language}"),
+            ];
+            let ids = unique_sorted_desc(self.fetch_ids_for_constraints(constraints).await);
+            return Ok(self.paginate_ids(ids, page).await);
+        }
+
         let urls = build_browse_nozomi_urls(gtype, sort, language);
         let mut last_err = AppError::Other("all nozomi endpoints failed".into());
 
@@ -228,6 +238,10 @@ impl HitomiClient {
         language: &str,
     ) -> AppResult<GalleryPage> {
         let ids = self.resolve_search_ids(query, language).await?;
+        Ok(self.paginate_ids(ids, page).await)
+    }
+
+    async fn paginate_ids(&self, ids: Vec<i64>, page: usize) -> GalleryPage {
         let total = ids.len();
         let total_pages = total.div_ceil(config::PAGE_SIZE).max(1);
 
@@ -239,12 +253,12 @@ impl HitomiClient {
             self.load_galleries_in_parallel(ids[start..end].to_vec()).await
         };
 
-        Ok(GalleryPage {
+        GalleryPage {
             items,
             total,
             total_pages,
             page,
-        })
+        }
     }
 
     async fn resolve_search_ids(&self, query: &str, language: &str) -> AppResult<Vec<i64>> {
@@ -582,6 +596,27 @@ fn existing_page(folder: &std::path::Path, index: usize) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_type_language() {
+        let client = HitomiClient::new();
+        let page = client
+            .fetch_galleries(1, GalleryType::Anime, SortOrder::Latest, "korean")
+            .await
+            .expect("anime + korean browse failed");
+        println!("anime+korean: {} items, total={}", page.items.len(), page.total);
+        assert!(
+            page.items.iter().all(|g| g.gtype == "anime"),
+            "all items should be anime"
+        );
+        assert!(
+            page.items
+                .iter()
+                .all(|g| g.language.as_deref() == Some("korean")),
+            "all items should be korean"
+        );
+    }
 
     #[tokio::test]
     #[ignore]
