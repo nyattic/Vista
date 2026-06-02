@@ -17,11 +17,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .manage(client)
         .register_asynchronous_uri_scheme_protocol("vimg", move |_ctx, request, responder| {
             image_protocol::handle(proto_client.clone(), request, responder);
         })
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             if let Ok(cache) = app.path().app_cache_dir() {
                 app.state::<Arc<HitomiClient>>()
                     .set_cache_dir(cache.join("images"));

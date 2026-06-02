@@ -5,6 +5,7 @@
   import { settingsStore } from '$lib/settings-store.svelte';
   import { downloadStore } from '$lib/download-store.svelte';
   import { libraryStore } from '$lib/library-store.svelte';
+  import { updateStore } from '$lib/update-store.svelte';
   import Header from './components/Header.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import Sidebar from './components/Sidebar.svelte';
@@ -13,6 +14,7 @@
   import Reader from './components/Reader.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import DownloadsPanel from './components/DownloadsPanel.svelte';
+  import UpdateBanner from './components/UpdateBanner.svelte';
 
   let systemLight = $state(false);
   let showSettings = $state(false);
@@ -26,6 +28,7 @@
     settingsStore.init();
     downloadStore.init();
     libraryStore.init();
+    updateStore.init();
     galleryStore.load(1);
     return () => mq.removeEventListener('change', handler);
   });
@@ -60,6 +63,8 @@
 {#if showDownloads}
   <DownloadsPanel onclose={() => (showDownloads = false)} />
 {/if}
+
+<UpdateBanner />
 
 {#if showSettings}
   <SettingsDialog onclose={() => (showSettings = false)} />

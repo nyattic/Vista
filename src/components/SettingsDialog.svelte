@@ -3,6 +3,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { settingsStore, type Theme } from '$lib/settings-store.svelte';
   import { galleryStore } from '$lib/gallery-store.svelte';
+  import { updateStore } from '$lib/update-store.svelte';
   import { clearImageCache, imageCacheSize } from '$lib/api';
   import { LANGUAGES, type Language } from '$lib/types';
   import Icon from './Icon.svelte';
@@ -249,6 +250,44 @@
           >
             <Icon name="trash" class="size-4" /> Clear cache
           </button>
+        </div>
+      </section>
+
+      <section>
+        <div class="mb-2 text-[12px] text-room-text">Updates</div>
+        <div class="flex items-center gap-2">
+          <span class="font-mono text-[11px] tabular-nums text-room-text-mid">
+            {updateStore.currentVersion ? `v${updateStore.currentVersion}` : '…'}
+            {#if updateStore.status === 'checking'}
+              · checking…
+            {:else if updateStore.status === 'available'}
+              · <span class="text-room-accent">v{updateStore.newVersion} available</span>
+            {:else if updateStore.status === 'downloading'}
+              · downloading {updateStore.percent}%
+            {:else if updateStore.status === 'ready'}
+              · restarting…
+            {:else if updateStore.status === 'uptodate'}
+              · up to date
+            {:else if updateStore.status === 'error'}
+              · <span class="text-[#ff6b6b]">check failed</span>
+            {/if}
+          </span>
+          {#if updateStore.status === 'available'}
+            <button
+              class="ml-auto rounded-[3px] bg-room-accent px-3 py-1.5 text-[12px] font-medium text-room-floor transition hover:brightness-110"
+              onclick={() => updateStore.install()}
+            >
+              Update & restart
+            </button>
+          {:else}
+            <button
+              class="ml-auto rounded-[3px] border border-room-line px-3 py-1.5 text-[12px] text-room-text-mid hover:border-room-line-strong hover:text-room-text disabled:opacity-50"
+              onclick={() => updateStore.check(false)}
+              disabled={updateStore.status === 'checking' || updateStore.status === 'downloading'}
+            >
+              Check for updates
+            </button>
+          {/if}
         </div>
       </section>
 
