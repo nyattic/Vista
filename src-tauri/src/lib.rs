@@ -69,6 +69,10 @@ pub fn run() {
             commands::clear_history,
             commands::set_progress,
             commands::all_progress,
+            commands::download_ids,
+            commands::list_downloads,
+            commands::remove_download,
+            commands::open_download_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

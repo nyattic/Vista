@@ -33,6 +33,19 @@ pub struct HitomiClient {
     downloads: Mutex<HashMap<i64, Arc<AtomicBool>>>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadResult {
+    pub id: i64,
+    pub gallery: Gallery,
+    pub folder: String,
+    pub done: usize,
+    pub total: usize,
+    pub failed: usize,
+    pub failed_pages: Vec<usize>,
+    pub skipped: usize,
+}
+
 impl HitomiClient {
     pub fn new() -> HitomiClient {
         HitomiClient {
@@ -436,7 +449,8 @@ impl HitomiClient {
         app: AppHandle,
         id: i64,
         dir: String,
-    ) -> AppResult<String> {
+        pages: Option<Vec<usize>>,
+    ) -> AppResult<DownloadResult> {
         let gallery = self.fetch_gallery_info(id).await?;
         let folder = PathBuf::from(&dir).join(sanitize(&format!("[{}] {}", id, gallery.title)));
         std::fs::create_dir_all(&folder)?;
@@ -445,23 +459,36 @@ impl HitomiClient {
         let total = gallery.files.len();
         let done = Arc::new(AtomicUsize::new(0));
         let failed = Arc::new(AtomicUsize::new(0));
+        let skipped = Arc::new(AtomicUsize::new(0));
+        let failed_pages = Arc::new(Mutex::new(Vec::<usize>::new()));
         let _ = app.emit(
             "download-progress",
             serde_json::json!({ "id": id, "done": 0, "total": total }),
         );
 
-        let items: Vec<(usize, String)> = gallery
-            .files
-            .iter()
-            .enumerate()
-            .map(|(i, f)| (i, f.hash.clone()))
-            .collect();
+        let requested: Option<HashSet<usize>> = pages.map(|items| {
+            items
+                .into_iter()
+                .filter(|page| *page > 0 && *page <= total)
+                .map(|page| page - 1)
+                .collect()
+        });
+
+        let mut items: Vec<(usize, String)> = Vec::new();
+        for (i, file) in gallery.files.iter().enumerate() {
+            if requested.as_ref().is_some_and(|set| !set.contains(&i)) {
+                continue;
+            }
+            items.push((i, file.hash.clone()));
+        }
 
         let tasks = items.into_iter().map(|(i, hash)| {
             let me = self.clone();
             let folder = folder.clone();
             let done = done.clone();
             let failed = failed.clone();
+            let skipped = skipped.clone();
+            let failed_pages = failed_pages.clone();
             let cancel = cancel.clone();
             let app = app.clone();
             async move {
@@ -469,6 +496,7 @@ impl HitomiClient {
                     return;
                 }
                 if existing_page(&folder, i).is_some() {
+                    skipped.fetch_add(1, Ordering::SeqCst);
                     let d = done.fetch_add(1, Ordering::SeqCst) + 1;
                     let _ = app.emit(
                         "download-progress",
@@ -480,12 +508,18 @@ impl HitomiClient {
                     Ok((bytes, ct)) => {
                         let ext = image_cache::ext_from_content_type(&ct);
                         let path = folder.join(format!("{:04}.{}", i + 1, ext));
-                        std::fs::write(path, &bytes).is_ok()
+                        let tmp = folder.join(format!("{:04}.{}.part", i + 1, ext));
+                        std::fs::write(&tmp, &bytes)
+                            .and_then(|_| std::fs::rename(&tmp, &path))
+                            .is_ok()
                     }
                     Err(_) => false,
                 };
                 if !ok {
                     failed.fetch_add(1, Ordering::SeqCst);
+                    if let Ok(mut pages) = failed_pages.lock() {
+                        pages.push(i + 1);
+                    }
                 }
                 let d = done.fetch_add(1, Ordering::SeqCst) + 1;
                 let _ = app.emit(
@@ -500,6 +534,9 @@ impl HitomiClient {
 
         let failed = failed.load(Ordering::SeqCst);
         let done = done.load(Ordering::SeqCst);
+        let skipped = skipped.load(Ordering::SeqCst);
+        let mut failed_pages = failed_pages.lock().map(|p| p.clone()).unwrap_or_default();
+        failed_pages.sort_unstable();
         let folder_str = folder.to_string_lossy().to_string();
 
         if cancel.load(Ordering::SeqCst) {
@@ -510,10 +547,26 @@ impl HitomiClient {
         } else {
             let _ = app.emit(
                 "download-done",
-                serde_json::json!({ "id": id, "folder": folder_str, "total": total, "failed": failed }),
+                serde_json::json!({
+                    "id": id,
+                    "folder": folder_str,
+                    "total": total,
+                    "failed": failed,
+                    "failedPages": failed_pages,
+                    "skipped": skipped
+                }),
             );
         }
-        Ok(folder_str)
+        Ok(DownloadResult {
+            id,
+            gallery,
+            folder: folder_str,
+            done,
+            total,
+            failed,
+            failed_pages,
+            skipped,
+        })
     }
 
     async fn try_fetch_image(&self, url: &str) -> AppResult<(Vec<u8>, String)> {
@@ -536,8 +589,23 @@ impl HitomiClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("image/webp")
             .to_string();
-        let bytes = resp.bytes().await?;
-        Ok((bytes.to_vec(), content_type))
+        if !content_type.starts_with("image/") {
+            return Err(AppError::Other("response is not an image".into()));
+        }
+        let mut stream = resp.bytes_stream();
+        let mut out = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            let next_len = out.len().saturating_add(chunk.len());
+            if next_len as u64 > config::MAX_IMAGE_BYTES {
+                return Err(AppError::Other("image too large".into()));
+            }
+            out.extend_from_slice(&chunk);
+        }
+        if out.is_empty() {
+            return Err(AppError::Other("empty image response".into()));
+        }
+        Ok((out, content_type))
     }
 }
 
@@ -610,7 +678,7 @@ fn existing_page(folder: &std::path::Path, index: usize) -> Option<PathBuf> {
     const EXTS: [&str; 7] = ["webp", "avif", "jpg", "png", "gif", "jxl", "img"];
     for ext in EXTS {
         let path = folder.join(format!("{:04}.{}", index + 1, ext));
-        if path.is_file() {
+        if path.metadata().map(|m| m.is_file() && m.len() > 0).unwrap_or(false) {
             return Some(path);
         }
     }

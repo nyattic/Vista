@@ -1,9 +1,9 @@
-import { fetchGalleries, searchGalleries, listFavorites, listHistory } from './api';
+import { fetchGalleries, searchGalleries, listFavorites, listHistory, listDownloads } from './api';
 import { settingsStore } from './settings-store.svelte';
 import { parseTag } from './format';
 import { PAGE_SIZE, type Gallery, type GalleryPage, type GalleryType, type SortOrder } from './types';
 
-export type View = 'browse' | 'favorites' | 'history';
+export type View = 'browse' | 'favorites' | 'history' | 'downloads';
 
 function isBlacklisted(g: Gallery, blacklist: string[]): boolean {
   if (!blacklist.length) return false;
@@ -51,9 +51,20 @@ class GalleryStore {
   }
 
   private async fetchPage(p: number): Promise<GalleryPage> {
-    if (this.view === 'favorites' || this.view === 'history') {
+    if (this.view === 'favorites' || this.view === 'history' || this.view === 'downloads') {
       if (p <= 1 || this.localItems.length === 0) {
-        this.localItems = this.view === 'favorites' ? await listFavorites() : await listHistory();
+        if (this.view === 'favorites') {
+          this.localItems = await listFavorites();
+        } else if (this.view === 'history') {
+          this.localItems = await listHistory();
+        } else {
+          const records = await listDownloads();
+          this.localItems = records.map((r) => ({
+            ...r.gallery,
+            downloadFolder: r.folder,
+            downloadFailedPages: r.failedPages
+          }));
+        }
       }
       const total = this.localItems.length;
       const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

@@ -1,5 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Gallery, GalleryPage, GalleryType, Language, SortOrder } from './types';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import type {
+  DownloadRecord,
+  DownloadResult,
+  Gallery,
+  GalleryFile,
+  GalleryPage,
+  GalleryType,
+  Language,
+  SortOrder
+} from './types';
 
 export function fetchGalleries(
   page: number,
@@ -33,8 +43,12 @@ export function tagSuggestions(query: string): Promise<Suggestion[]> {
   return invoke('tag_suggestions', { query });
 }
 
-export function downloadGallery(id: number, dir: string): Promise<string> {
-  return invoke('download_gallery', { id, dir });
+export function downloadGallery(
+  id: number,
+  dir: string,
+  pages?: number[]
+): Promise<DownloadResult> {
+  return invoke('download_gallery', { id, dir, pages });
 }
 
 export function cancelDownload(id: number): Promise<void> {
@@ -103,10 +117,32 @@ export function allProgress(): Promise<ProgressRow[]> {
   return invoke('all_progress');
 }
 
+export function downloadIds(): Promise<number[]> {
+  return invoke('download_ids');
+}
+
+export function listDownloads(): Promise<DownloadRecord[]> {
+  return invoke('list_downloads');
+}
+
+export function removeDownload(id: number): Promise<void> {
+  return invoke('remove_download', { id });
+}
+
+export function openDownloadFolder(id: number): Promise<void> {
+  return invoke('open_download_folder', { id });
+}
+
 const isWindows =
   typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
 
 export function imageSrc(hash: string, thumbnail = false): string {
   const path = thumbnail ? `${hash}?thumb=1` : hash;
   return isWindows ? `http://vimg.localhost/${path}` : `vimg://localhost/${path}`;
+}
+
+export function fileSrc(file: GalleryFile | undefined, thumbnail = false): string {
+  if (!file) return '';
+  if (file.localPath) return convertFileSrc(file.localPath);
+  return imageSrc(file.hash, thumbnail);
 }

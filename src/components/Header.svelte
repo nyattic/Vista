@@ -16,7 +16,8 @@
   const views: { value: View; icon: string; label: string }[] = [
     { value: 'browse', icon: 'grid', label: 'Browse' },
     { value: 'favorites', icon: 'heart', label: 'Favorites' },
-    { value: 'history', icon: 'clock', label: 'History' }
+    { value: 'history', icon: 'clock', label: 'History' },
+    { value: 'downloads', icon: 'folder', label: 'Library' }
   ];
 
   let focused = $state(false);

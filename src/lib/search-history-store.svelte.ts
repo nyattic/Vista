@@ -4,7 +4,12 @@ const MAX = 20;
 function load(): string[] {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is string => typeof item === 'string' && item.length <= 300)
+      .slice(0, MAX);
   } catch {
     return [];
   }
@@ -19,7 +24,7 @@ class SearchHistoryStore {
 
   add(query: string) {
     const q = query.trim();
-    if (!q) return;
+    if (!q || q.length > 300) return;
     this.items = [q, ...this.items.filter((x) => x !== q)].slice(0, MAX);
     this.persist();
   }

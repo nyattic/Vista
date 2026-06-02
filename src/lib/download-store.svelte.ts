@@ -1,5 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { downloadGallery, cancelDownload, defaultDownloadDir } from './api';
+import { libraryStore } from './library-store.svelte';
 import { settingsStore } from './settings-store.svelte';
 
 export interface DownloadState {
@@ -11,6 +12,8 @@ export interface DownloadState {
   running: boolean;
   paused: boolean;
   failed?: number;
+  failedPages?: number[];
+  skipped?: number;
   folder?: string;
   error?: string;
 }
@@ -26,6 +29,8 @@ interface DoneEvent {
   folder: string;
   total: number;
   failed: number;
+  failedPages: number[];
+  skipped: number;
 }
 
 interface CancelledEvent {
@@ -53,9 +58,10 @@ class DownloadStore {
     });
 
     listen<DoneEvent>('download-done', (e) => {
-      const { id, folder, total, failed } = e.payload;
+      const { id, folder, total, failed, failedPages, skipped } = e.payload;
       const prev = this.jobs[id];
       if (!prev) return;
+      libraryStore.markDownloaded(id);
       this.jobs = {
         ...this.jobs,
         [id]: {
@@ -65,6 +71,8 @@ class DownloadStore {
           paused: false,
           folder,
           failed,
+          failedPages,
+          skipped,
           total: total ?? prev.total
         }
       };
@@ -93,9 +101,26 @@ class DownloadStore {
     return this.list.filter((j) => j.running).length;
   }
 
-  async start(id: number, title: string) {
+  async start(id: number, title: string, pages?: number[]) {
     const cur = this.jobs[id];
     if (cur?.running) return;
+    const retryPages = pages?.filter((p) => Number.isFinite(p) && p > 0) ?? [];
+
+    if (retryPages.length === 0 && libraryStore.isDownloaded(id)) {
+      this.jobs = {
+        ...this.jobs,
+        [id]: {
+          ...(cur ?? { id, title, done: 0, total: 0 }),
+          id,
+          title,
+          finished: true,
+          running: false,
+          paused: false,
+          error: 'already downloaded'
+        }
+      };
+      return;
+    }
 
     let dir = settingsStore.downloadDir;
     if (!dir) {
@@ -129,11 +154,29 @@ class DownloadStore {
         finished: false,
         running: true,
         paused: false,
+        failedPages: retryPages.length ? retryPages : cur?.failedPages,
         error: undefined
       }
     };
     try {
-      await downloadGallery(id, dir);
+      const result = await downloadGallery(id, dir, retryPages.length ? retryPages : undefined);
+      libraryStore.markDownloaded(id);
+      const prev = this.jobs[id];
+      this.jobs = {
+        ...this.jobs,
+        [id]: {
+          ...(prev ?? { id, title, done: 0, total: result.total }),
+          finished: true,
+          running: false,
+          paused: false,
+          folder: result.folder,
+          failed: result.failed,
+          failedPages: result.failedPages,
+          skipped: result.skipped,
+          total: result.total,
+          done: result.done
+        }
+      };
     } catch (e) {
       const prev = this.jobs[id];
       this.jobs = {

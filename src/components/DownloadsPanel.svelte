@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { openPath } from '@tauri-apps/plugin-opener';
+  import { openDownloadFolder } from '$lib/api';
   import { downloadStore, type DownloadState } from '$lib/download-store.svelte';
   import Icon from './Icon.svelte';
 
@@ -13,6 +13,7 @@
   }
 
   function statusText(j: DownloadState): string {
+    if (j.error === 'already downloaded') return 'Already downloaded';
     if (j.error) return `Failed · ${j.error}`;
     if (j.paused) return `Paused · ${j.done}/${j.total || '?'}`;
     if (j.finished && j.failed) return `Done · ${j.total - j.failed}/${j.total} (${j.failed} failed)`;
@@ -20,8 +21,8 @@
     return `Downloading · ${j.done}/${j.total || '?'}`;
   }
 
-  async function openFolder(folder: string) {
-    await openPath(folder).catch(() => {});
+  async function openFolder(id: number) {
+    await openDownloadFolder(id).catch(() => {});
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -100,17 +101,27 @@
                 {:else if j.paused || j.error}
                   <button
                     class="grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
-                    onclick={() => downloadStore.start(j.id, j.title)}
+                    onclick={() => downloadStore.start(j.id, j.title, j.failedPages)}
                     title={j.error ? 'Retry' : 'Resume'}
                     aria-label="Resume"
                   >
                     <Icon name="play" class="size-3.5" />
                   </button>
                 {/if}
+                {#if !j.running && j.failedPages?.length}
+                  <button
+                    class="grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
+                    onclick={() => downloadStore.start(j.id, j.title, j.failedPages)}
+                    title="Retry failed pages"
+                    aria-label="Retry failed pages"
+                  >
+                    <Icon name="refresh" class="size-3.5" />
+                  </button>
+                {/if}
                 {#if j.folder}
                   <button
                     class="grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
-                    onclick={() => openFolder(j.folder!)}
+                    onclick={() => openFolder(j.id)}
                     title="Open folder"
                     aria-label="Open folder"
                   >

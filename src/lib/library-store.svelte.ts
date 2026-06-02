@@ -8,6 +8,7 @@ export interface PageProgress {
 
 class LibraryStore {
   favorites = $state<Set<number>>(new Set());
+  downloads = $state<Set<number>>(new Set());
   progress = $state<Record<number, PageProgress>>({});
 
   async init() {
@@ -24,10 +25,29 @@ class LibraryStore {
     } catch {
       /* ignore */
     }
+    try {
+      this.downloads = new Set(await api.downloadIds());
+    } catch {
+      /* ignore */
+    }
   }
 
   isFavorite(id: number): boolean {
     return this.favorites.has(id);
+  }
+
+  isDownloaded(id: number): boolean {
+    return this.downloads.has(id);
+  }
+
+  markDownloaded(id: number) {
+    this.downloads = new Set([...this.downloads, id]);
+  }
+
+  markNotDownloaded(id: number) {
+    const next = new Set(this.downloads);
+    next.delete(id);
+    this.downloads = next;
   }
 
   async toggleFavorite(gallery: Gallery): Promise<boolean> {

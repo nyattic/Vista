@@ -30,6 +30,8 @@ pub struct GalleryFile {
     pub haswebp: i64,
     pub hasavif: i64,
     pub hasavifsmalltn: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_path: Option<String>,
 }
 
 impl Gallery {
@@ -102,6 +104,7 @@ fn parse_file(v: &Value) -> Option<GalleryFile> {
         haswebp: flexible_int(obj.get("haswebp")).unwrap_or(0),
         hasavif: flexible_int(obj.get("hasavif")).unwrap_or(0),
         hasavifsmalltn: flexible_int(obj.get("hasavifsmalltn")),
+        local_path: None,
     })
 }
 

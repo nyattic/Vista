@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { imageSrc } from '$lib/api';
+  import { fileSrc } from '$lib/api';
   import { readerStore } from '$lib/reader-store.svelte';
   import { libraryStore } from '$lib/library-store.svelte';
   import { settingsStore } from '$lib/settings-store.svelte';
@@ -155,7 +155,7 @@
       const i = current + k;
       if (i < 0 || i > lastIndex) continue;
       const img = new Image();
-      img.src = imageSrc(gallery.files[i].hash, false);
+      img.src = fileSrc(gallery.files[i], false);
     }
   });
 
@@ -221,7 +221,7 @@
         >
           <img
             class="h-full w-full object-contain"
-            src={imageSrc(file.hash, false)}
+            src={fileSrc(file, false)}
             alt={`page ${i + 1}`}
             loading="lazy"
             draggable="false"
@@ -236,15 +236,15 @@
           {#if leftIdx <= lastIndex}
             <img
               class="h-full max-w-[50%] object-contain"
-              src={imageSrc(gallery.files[leftIdx].hash, false)}
+              src={fileSrc(gallery.files[leftIdx], false)}
               alt={`page ${leftIdx + 1}`}
               draggable="false"
             />
           {/if}
           {#if rightIdx <= lastIndex && rightIdx !== leftIdx}
             <img
-              class="h-full max-w-[50%] object-contain"
-              src={imageSrc(gallery.files[rightIdx].hash, false)}
+             class="h-full max-w-[50%] object-contain"
+              src={fileSrc(gallery.files[rightIdx], false)}
               alt={`page ${rightIdx + 1}`}
               draggable="false"
             />
@@ -253,7 +253,7 @@
       {:else}
         <img
           class="max-h-full max-w-full object-contain"
-          src={imageSrc(gallery.files[current].hash, false)}
+          src={fileSrc(gallery.files[current], false)}
           alt={`page ${current + 1}`}
           draggable="false"
         />
@@ -317,7 +317,7 @@
 
     <img
       class="pointer-events-none absolute inset-0 m-auto max-h-full max-w-full object-contain"
-      src={imageSrc(gallery.files[zoomed].hash, false)}
+      src={fileSrc(gallery.files[zoomed], false)}
       alt={`page ${zoomed + 1}`}
       draggable="false"
     />

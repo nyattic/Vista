@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { imageSrc, removeHistory } from '$lib/api';
+  import { fileSrc, openDownloadFolder, removeHistory } from '$lib/api';
   import { galleryStore } from '$lib/gallery-store.svelte';
   import { readerStore } from '$lib/reader-store.svelte';
   import { downloadStore } from '$lib/download-store.svelte';
@@ -10,7 +10,9 @@
   const gallery = $derived(galleryStore.selected);
   const dl = $derived(gallery ? downloadStore.get(gallery.id) : undefined);
   const fav = $derived(gallery ? libraryStore.isFavorite(gallery.id) : false);
+  const downloaded = $derived(gallery ? libraryStore.isDownloaded(gallery.id) : false);
   const prog = $derived(gallery ? libraryStore.progressOf(gallery.id) : undefined);
+  const failedPages = $derived(dl?.failedPages ?? gallery?.downloadFailedPages ?? []);
 
   function searchFor(prefix: string, value: string) {
     galleryStore.applyQuery(`${prefix}:${value.replace(/ /g, '_')}`);
@@ -26,6 +28,15 @@
     if (!gallery) return;
     await removeHistory(gallery.id);
     if (galleryStore.view === 'history') galleryStore.load(1);
+  }
+
+  async function openFolder() {
+    if (gallery) await openDownloadFolder(gallery.id).catch(() => {});
+  }
+
+  function retryFailed() {
+    if (!gallery || failedPages.length === 0) return;
+    downloadStore.start(gallery.id, gallery.title, failedPages);
   }
 
   let shareCopied = $state(false);
@@ -68,7 +79,7 @@
           {#if gallery.files.length}
             <img
               class="aspect-[3/4] w-full object-cover"
-              src={imageSrc(gallery.files[0].hash, true)}
+              src={fileSrc(gallery.files[0], true)}
               alt={gallery.title}
               draggable="false"
             />
@@ -145,6 +156,24 @@
                 >
                   <Icon name="close" class="size-4" />
                 </button>
+              {:else if failedPages.length > 0}
+                <button
+                  class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
+                  onclick={retryFailed}
+                  title="Retry failed pages"
+                  aria-label="Retry failed pages"
+                >
+                  <Icon name="refresh" class="size-4" />
+                </button>
+              {:else if downloaded}
+                <button
+                  class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-accent transition hover:border-room-line-strong"
+                  onclick={openFolder}
+                  title="Open downloaded folder"
+                  aria-label="Open downloaded folder"
+                >
+                  <Icon name="folder" class="size-4" />
+                </button>
               {:else}
                 <button
                   class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
@@ -175,9 +204,17 @@
                 onclick={dropHistory}>Remove from history</button
               >
             {/if}
+            {#if galleryStore.view === 'downloads' && failedPages.length > 0}
+              <button
+                class="text-left text-[11px] text-[#e0a458] hover:text-room-text"
+                onclick={retryFailed}>Retry {failedPages.length} failed page{failedPages.length === 1 ? '' : 's'}</button
+              >
+            {/if}
             {#if dl}
               <div class="text-[11px]">
-                {#if dl.error}
+                {#if dl.error === 'already downloaded'}
+                  <span class="text-room-accent">Already downloaded</span>
+                {:else if dl.error}
                   <span class="text-[#ff6b6b]">Download failed: {dl.error}</span>
                 {:else if dl.paused}
                   <span class="text-[#e0a458]">Paused · {dl.done}/{dl.total || '?'}</span>

@@ -6,6 +6,7 @@ export interface GalleryFile {
   haswebp: number;
   hasavif: number;
   hasavifsmalltn: number | null;
+  localPath?: string;
 }
 
 export interface Gallery {
@@ -21,6 +22,25 @@ export interface Gallery {
   date: string;
   files: GalleryFile[];
   pageCount: number;
+  downloadFolder?: string;
+  downloadFailedPages?: number[];
+}
+
+export interface DownloadRecord {
+  gallery: Gallery;
+  folder: string;
+  failedPages: number[];
+}
+
+export interface DownloadResult {
+  id: number;
+  gallery: Gallery;
+  folder: string;
+  done: number;
+  total: number;
+  failed: number;
+  failedPages: number[];
+  skipped: number;
 }
 
 export interface GalleryPage {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { imageSrc } from '$lib/api';
+  import { fileSrc } from '$lib/api';
   import { parseTag, primaryArtist } from '$lib/format';
   import { libraryStore } from '$lib/library-store.svelte';
   import type { Gallery } from '$lib/types';
@@ -31,6 +31,7 @@
   const artist = $derived(primaryArtist(gallery));
   const chips = $derived(gallery.tags.slice(0, 3).map(parseTag));
   const fav = $derived(libraryStore.isFavorite(gallery.id));
+  const downloaded = $derived(libraryStore.isDownloaded(gallery.id) || !!gallery.downloadFolder);
   const pct = $derived(libraryStore.percent(gallery.id));
 </script>
 
@@ -52,7 +53,7 @@
         class="absolute inset-0 h-full w-full object-cover transition-opacity duration-300 {loaded
           ? 'opacity-100'
           : 'opacity-0'}"
-        src={imageSrc(cover, true)}
+        src={fileSrc(gallery.files[0], true)}
         alt={gallery.title}
         draggable="false"
         loading="lazy"
@@ -87,6 +88,13 @@
         class="absolute right-1.5 top-1.5 text-room-fav drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
       >
         <Icon name="heart" class="size-3.5" filled />
+      </span>
+    {/if}
+    {#if downloaded}
+      <span
+        class="absolute left-1.5 bottom-1.5 text-room-accent drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+      >
+        <Icon name="download" class="size-3.5" />
       </span>
     {/if}
     {#if pct > 0}

@@ -37,8 +37,10 @@ const isTileMin = (v: unknown): v is number =>
 const isCacheLimit = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1_048_576;
 const isStringArray = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.every((x) => typeof x === 'string');
-const isString = (v: unknown): v is string => typeof v === 'string';
+  Array.isArray(v) &&
+  v.length <= 200 &&
+  v.every((x) => typeof x === 'string' && x.length <= 200);
+const isString = (v: unknown): v is string => typeof v === 'string' && v.length <= 4096;
 const isReadingMode = (v: unknown): v is ReadingMode =>
   v === 'continuous' || v === 'paged' || v === 'spread';
 const isReadingDirection = (v: unknown): v is ReadingDirection => v === 'ltr' || v === 'rtl';
@@ -105,7 +107,7 @@ class SettingsStore {
 
   addBlacklist(tag: string) {
     const t = tag.trim().toLowerCase();
-    if (!t || this.blacklist.includes(t)) return;
+    if (!t || t.length > 200 || this.blacklist.includes(t) || this.blacklist.length >= 200) return;
     this.blacklist = [...this.blacklist, t];
     this.persistBlacklist();
   }

@@ -91,5 +91,10 @@
     <path d="m8.2 10.8 7.6-3.6M8.2 13.2l7.6 3.6" />
   {:else if name === 'check'}
     <path d="m5 12.5 4.5 4.5L19 7" />
+  {:else if name === 'refresh'}
+    <path d="M20 12a8 8 0 0 1-13.5 5.8" />
+    <path d="M4 12A8 8 0 0 1 17.5 6.2" />
+    <path d="M17.5 2.8v3.4h-3.4" />
+    <path d="M6.5 20.2v-3.4h3.4" />
   {/if}
 </svg>
