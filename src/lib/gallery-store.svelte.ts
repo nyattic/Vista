@@ -1,16 +1,22 @@
 import { fetchGalleries, searchGalleries, listFavorites, listHistory } from './api';
 import { settingsStore } from './settings-store.svelte';
 import { parseTag } from './format';
-import type { Gallery, GalleryPage, GalleryType, SortOrder } from './types';
+import { PAGE_SIZE, type Gallery, type GalleryPage, type GalleryType, type SortOrder } from './types';
 
 export type View = 'browse' | 'favorites' | 'history';
 
 function isBlacklisted(g: Gallery, blacklist: string[]): boolean {
   if (!blacklist.length) return false;
-  return g.tags.some((t) => {
+  const tagHit = g.tags.some((t) => {
     const raw = t.toLowerCase();
     const label = parseTag(t).label.toLowerCase();
-    return blacklist.some((b) => b === raw || b === label);
+    return blacklist.some((b) => raw.includes(b) || label.includes(b));
+  });
+  if (tagHit) return true;
+  const fields = [...g.artists, ...g.groups, ...g.series, ...g.characters];
+  return fields.some((f) => {
+    const v = f.toLowerCase();
+    return blacklist.some((b) => v.includes(b));
   });
 }
 
@@ -29,6 +35,7 @@ class GalleryStore {
   selectedId = $state<number | null>(null);
 
   private token = 0;
+  private localItems: Gallery[] = [];
 
   get searching(): boolean {
     return this.activeQuery.length > 0;
@@ -44,8 +51,15 @@ class GalleryStore {
 
   private async fetchPage(p: number): Promise<GalleryPage> {
     if (this.view === 'favorites' || this.view === 'history') {
-      const items = this.view === 'favorites' ? await listFavorites() : await listHistory();
-      return { items, total: items.length, totalPages: 1, page: 1 };
+      if (p <= 1 || this.localItems.length === 0) {
+        this.localItems = this.view === 'favorites' ? await listFavorites() : await listHistory();
+      }
+      const total = this.localItems.length;
+      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const page = Math.max(1, Math.min(totalPages, p));
+      const start = (page - 1) * PAGE_SIZE;
+      const items = this.localItems.slice(start, start + PAGE_SIZE);
+      return { items, total, totalPages, page };
     }
     return this.activeQuery
       ? searchGalleries(this.activeQuery, p, settingsStore.language)
@@ -56,6 +70,7 @@ class GalleryStore {
     this.view = v;
     this.query = '';
     this.activeQuery = '';
+    this.localItems = [];
     this.load(1);
   }
 

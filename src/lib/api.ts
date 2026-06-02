@@ -37,6 +37,10 @@ export function downloadGallery(id: number, dir: string): Promise<string> {
   return invoke('download_gallery', { id, dir });
 }
 
+export function cancelDownload(id: number): Promise<void> {
+  return invoke('cancel_download', { id });
+}
+
 export function defaultDownloadDir(): Promise<string | null> {
   return invoke('default_download_dir');
 }
@@ -47,6 +51,10 @@ export function clearImageCache(): Promise<void> {
 
 export function imageCacheSize(): Promise<number> {
   return invoke('image_cache_size');
+}
+
+export function setCacheLimit(bytes: number): Promise<void> {
+  return invoke('set_cache_limit', { bytes });
 }
 
 export interface ProgressRow {

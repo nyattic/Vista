@@ -11,3 +11,4 @@ pub const BYTES_PER_ID: usize = 4;
 pub const MAX_CONCURRENT_GALLERY_INFO: usize = 6;
 pub const MAX_NOZOMI_INDEX_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_IMAGE_BYTES: u64 = 50 * 1024 * 1024;
+pub const DEFAULT_IMAGE_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;

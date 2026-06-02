@@ -1,11 +1,17 @@
 <script lang="ts">
   import { galleryStore, type View } from '$lib/gallery-store.svelte';
   import { searchHistoryStore } from '$lib/search-history-store.svelte';
+  import { downloadStore } from '$lib/download-store.svelte';
   import { tagSuggestions, type Suggestion } from '$lib/api';
   import { GALLERY_TYPES } from '$lib/types';
   import Icon from './Icon.svelte';
 
-  let { onopensettings }: { onopensettings: () => void } = $props();
+  let {
+    onopensettings,
+    onopendownloads
+  }: { onopensettings: () => void; onopendownloads: () => void } = $props();
+
+  const activeDownloads = $derived(downloadStore.activeCount);
 
   const views: { value: View; icon: string; label: string }[] = [
     { value: 'browse', icon: 'grid', label: 'Browse' },
@@ -233,6 +239,20 @@
   </form>
 
   <div class="ml-auto flex shrink-0 items-center gap-2">
+    <button
+      class="relative grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel hover:text-room-text"
+      onclick={onopendownloads}
+      aria-label="Downloads"
+      title="Downloads"
+    >
+      <Icon name="download" class="size-4" />
+      {#if activeDownloads > 0}
+        <span
+          class="absolute -right-0.5 -top-0.5 grid min-w-3.5 place-items-center rounded-full bg-room-accent px-1 font-mono text-[8px] leading-[14px] text-room-floor"
+          >{activeDownloads}</span
+        >
+      {/if}
+    </button>
     <button
       class="grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel hover:text-room-text"
       onclick={onopensettings}

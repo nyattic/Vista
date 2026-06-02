@@ -49,16 +49,6 @@ pub async fn tag_suggestions(
 }
 
 #[tauri::command]
-pub async fn image_urls(
-    client: State<'_, Arc<HitomiClient>>,
-    hash: String,
-    is_thumbnail: bool,
-) -> AppResult<Vec<String>> {
-    let formats: &[&str] = if is_thumbnail { &["webp"] } else { &["webp", "avif"] };
-    Ok(client.image_urls(&hash, is_thumbnail, formats).await)
-}
-
-#[tauri::command]
 pub async fn download_gallery(
     app: AppHandle,
     client: State<'_, Arc<HitomiClient>>,
@@ -67,6 +57,11 @@ pub async fn download_gallery(
 ) -> AppResult<String> {
     let client = client.inner().clone();
     client.download_gallery(app, id, dir).await
+}
+
+#[tauri::command]
+pub fn cancel_download(client: State<'_, Arc<HitomiClient>>, id: i64) {
+    client.cancel_download(id);
 }
 
 #[tauri::command]
@@ -86,6 +81,11 @@ pub fn clear_image_cache(client: State<'_, Arc<HitomiClient>>) -> AppResult<()> 
 #[tauri::command]
 pub fn image_cache_size(client: State<'_, Arc<HitomiClient>>) -> u64 {
     client.cache_size()
+}
+
+#[tauri::command]
+pub fn set_cache_limit(client: State<'_, Arc<HitomiClient>>, bytes: u64) {
+    client.set_cache_limit(bytes);
 }
 
 #[tauri::command]

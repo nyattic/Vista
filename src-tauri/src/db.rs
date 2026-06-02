@@ -7,8 +7,9 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const HISTORY_LIMIT: i64 = 300;
+const SCHEMA_VERSION: i64 = 1;
 
-const SCHEMA: &str = "
+const SCHEMA_V1: &str = "
 CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY, data TEXT NOT NULL, added_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY, data TEXT NOT NULL, viewed_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS progress (id INTEGER PRIMARY KEY, page INTEGER NOT NULL, total INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -33,6 +34,17 @@ fn now() -> i64 {
         .unwrap_or(0)
 }
 
+fn migrate(conn: &Connection) -> AppResult<()> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version < 1 {
+        conn.execute_batch(SCHEMA_V1)?;
+    }
+    if version != SCHEMA_VERSION {
+        conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
+    }
+    Ok(())
+}
+
 fn to_json(g: &Gallery) -> AppResult<String> {
     serde_json::to_string(g).map_err(|e| AppError::Decode(e.to_string()))
 }
@@ -44,7 +56,7 @@ fn from_json(s: &str) -> Option<Gallery> {
 impl Db {
     pub fn open(path: &Path) -> AppResult<Db> {
         let conn = Connection::open(path)?;
-        conn.execute_batch(SCHEMA)?;
+        migrate(&conn)?;
         Ok(Db {
             conn: Mutex::new(conn),
         })

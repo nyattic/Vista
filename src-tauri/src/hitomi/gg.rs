@@ -1,5 +1,5 @@
 use super::{config, http};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
@@ -78,8 +78,7 @@ pub async fn fetch(client: &reqwest::Client) -> AppResult<GgData> {
     let url = format!("https://{}/gg.js", config::LTN_DOMAIN);
     let resp = client.get(&url).headers(http::api_headers()).send().await?;
     let text = resp.text().await?;
-    if text.is_empty() {
-        return Ok(fallback());
-    }
-    Ok(parse(&text).filter(|g| !g.m.is_empty()).unwrap_or_else(fallback))
+    parse(&text)
+        .filter(|g| !g.m.is_empty())
+        .ok_or_else(|| AppError::Decode("failed to parse gg.js".into()))
 }

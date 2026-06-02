@@ -15,6 +15,16 @@ pub fn handle(client: Arc<HitomiClient>, request: Request<Vec<u8>>, responder: U
             .map(|c| c.into_owned())
             .unwrap_or(raw);
 
+        if !crate::hitomi::is_valid_hash(&hash) {
+            responder.respond(
+                Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Vec::new())
+                    .unwrap_or_else(|_| Response::new(Vec::new())),
+            );
+            return;
+        }
+
         let response = match client.fetch_image_bytes(&hash, is_thumb).await {
             Ok((bytes, content_type)) => Response::builder()
                 .status(StatusCode::OK)

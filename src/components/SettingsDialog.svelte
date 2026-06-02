@@ -15,6 +15,17 @@
     { value: 'light', label: 'Light' }
   ];
 
+  const readingModes = [
+    { value: 'continuous', label: 'Continuous' },
+    { value: 'paged', label: 'Paged' },
+    { value: 'spread', label: 'Spread' }
+  ] as const;
+
+  const readingDirections = [
+    { value: 'ltr', label: 'Left → Right' },
+    { value: 'rtl', label: 'Right → Left' }
+  ] as const;
+
   let newTag = $state('');
   let cacheBytes = $state<number | null>(null);
 
@@ -129,6 +140,34 @@
       </section>
 
       <section>
+        <div class="mb-2 text-[12px] text-room-text">Reader layout</div>
+        <div class="flex gap-1.5">
+          {#each readingModes as m (m.value)}
+            <button
+              class="flex-1 rounded-[3px] border px-3 py-1.5 text-[12px] transition {settingsStore.readingMode ===
+              m.value
+                ? 'border-room-accent bg-room-panel-hi text-room-accent'
+                : 'border-room-line text-room-text-mid hover:border-room-line-strong hover:text-room-text'}"
+              onclick={() => settingsStore.setReadingMode(m.value)}>{m.label}</button
+            >
+          {/each}
+        </div>
+        {#if settingsStore.readingMode !== 'continuous'}
+          <div class="mt-1.5 flex gap-1.5">
+            {#each readingDirections as d (d.value)}
+              <button
+                class="flex-1 rounded-[3px] border px-3 py-1.5 text-[12px] transition {settingsStore.readingDirection ===
+                d.value
+                  ? 'border-room-accent bg-room-panel-hi text-room-accent'
+                  : 'border-room-line text-room-text-mid hover:border-room-line-strong hover:text-room-text'}"
+                onclick={() => settingsStore.setReadingDirection(d.value)}>{d.label}</button
+              >
+            {/each}
+          </div>
+        {/if}
+      </section>
+
+      <section>
         <div class="mb-2 text-[12px] text-room-text">Blacklist tags</div>
         <form class="flex gap-1.5" onsubmit={addTag}>
           <input
@@ -189,6 +228,17 @@
 
       <section>
         <div class="mb-2 text-[12px] text-room-text">Image cache</div>
+        <div class="mb-2 flex flex-wrap gap-1.5">
+          {#each settingsStore.cacheLimits as limit (limit.value)}
+            <button
+              class="rounded-[3px] border px-3 py-1.5 text-[12px] transition {settingsStore.cacheLimitMb ===
+              limit.value
+                ? 'border-room-accent bg-room-panel-hi text-room-accent'
+                : 'border-room-line text-room-text-mid hover:border-room-line-strong hover:text-room-text'}"
+              onclick={() => settingsStore.setCacheLimitMb(limit.value)}>{limit.label}</button
+            >
+          {/each}
+        </div>
         <div class="flex items-center gap-2">
           <span class="font-mono text-[12px] tabular-nums text-room-text-mid">
             {cacheBytes === null ? '…' : formatBytes(cacheBytes)}

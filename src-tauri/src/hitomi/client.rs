@@ -10,15 +10,27 @@ use futures::future::join_all;
 use futures::stream::{self, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
+const GG_TTL: Duration = Duration::from_secs(30 * 60);
+const CACHE_SWEEP_EVERY: usize = 200;
+
+struct GgCache {
+    data: GgData,
+    fetched_at: Instant,
+}
+
 pub struct HitomiClient {
     http: reqwest::Client,
-    gg: RwLock<Option<GgData>>,
+    gg: RwLock<Option<GgCache>>,
     cache_dir: OnceLock<PathBuf>,
+    cache_limit: AtomicU64,
+    writes_since_sweep: AtomicUsize,
+    downloads: Mutex<HashMap<i64, Arc<AtomicBool>>>,
 }
 
 impl HitomiClient {
@@ -27,6 +39,52 @@ impl HitomiClient {
             http: http::build_client(),
             gg: RwLock::new(None),
             cache_dir: OnceLock::new(),
+            cache_limit: AtomicU64::new(config::DEFAULT_IMAGE_CACHE_BYTES),
+            writes_since_sweep: AtomicUsize::new(0),
+            downloads: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn set_cache_limit(&self, bytes: u64) {
+        self.cache_limit.store(bytes, Ordering::Relaxed);
+        if let Some(dir) = self.cache_dir.get() {
+            if bytes != 0 {
+                let dir = dir.clone();
+                tauri::async_runtime::spawn_blocking(move || image_cache::enforce_limit(&dir, bytes));
+            }
+        }
+    }
+
+    fn maybe_sweep_cache(&self) {
+        let Some(dir) = self.cache_dir.get() else {
+            return;
+        };
+        let limit = self.cache_limit.load(Ordering::Relaxed);
+        if limit == 0 {
+            return;
+        }
+        let n = self.writes_since_sweep.fetch_add(1, Ordering::Relaxed) + 1;
+        if n < CACHE_SWEEP_EVERY {
+            return;
+        }
+        self.writes_since_sweep.store(0, Ordering::Relaxed);
+        let dir = dir.clone();
+        tauri::async_runtime::spawn_blocking(move || image_cache::enforce_limit(&dir, limit));
+    }
+
+    fn register_download(&self, id: i64) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        self.downloads.lock().unwrap().insert(id, flag.clone());
+        flag
+    }
+
+    fn finish_download(&self, id: i64) {
+        self.downloads.lock().unwrap().remove(&id);
+    }
+
+    pub fn cancel_download(&self, id: i64) {
+        if let Some(flag) = self.downloads.lock().unwrap().get(&id) {
+            flag.store(true, Ordering::SeqCst);
         }
     }
 
@@ -47,13 +105,40 @@ impl HitomiClient {
     pub async fn gg_data(&self) -> GgData {
         {
             let guard = self.gg.read().await;
-            if let Some(g) = guard.as_ref() {
-                return g.clone();
+            if let Some(c) = guard.as_ref() {
+                if c.fetched_at.elapsed() < GG_TTL {
+                    return c.data.clone();
+                }
             }
         }
-        let fetched = gg::fetch(&self.http).await.unwrap_or_else(|_| gg::fallback());
-        *self.gg.write().await = Some(fetched.clone());
-        fetched
+
+        match gg::fetch(&self.http).await {
+            Ok(fresh) => {
+                let mut guard = self.gg.write().await;
+                *guard = Some(GgCache {
+                    data: fresh.clone(),
+                    fetched_at: Instant::now(),
+                });
+                fresh
+            }
+            Err(_) => {
+                let mut guard = self.gg.write().await;
+                match guard.as_mut() {
+                    Some(c) => {
+                        c.fetched_at = Instant::now();
+                        c.data.clone()
+                    }
+                    None => {
+                        let fb = gg::fallback();
+                        *guard = Some(GgCache {
+                            data: fb.clone(),
+                            fetched_at: Instant::now(),
+                        });
+                        fb
+                    }
+                }
+            }
+        }
     }
 
     pub async fn image_urls(
@@ -62,6 +147,9 @@ impl HitomiClient {
         is_thumbnail: bool,
         formats: &[&str],
     ) -> Vec<String> {
+        if !super::is_valid_hash(hash) {
+            return Vec::new();
+        }
         let gg = self.gg_data().await;
         url_gen::generate_all_urls(hash, is_thumbnail, &gg, formats)
     }
@@ -290,6 +378,9 @@ impl HitomiClient {
     }
 
     pub async fn fetch_image_bytes(&self, hash: &str, is_thumbnail: bool) -> AppResult<(Vec<u8>, String)> {
+        if !super::is_valid_hash(hash) {
+            return Err(AppError::NotFound("invalid image hash".into()));
+        }
         if let Some(dir) = self.cache_dir.get() {
             if let Some(hit) = image_cache::read(dir, hash, is_thumbnail) {
                 return Ok(hit);
@@ -305,6 +396,7 @@ impl HitomiClient {
                 Ok((bytes, ct)) => {
                     if let Some(dir) = self.cache_dir.get() {
                         image_cache::write(dir, hash, is_thumbnail, &bytes, &ct);
+                        self.maybe_sweep_cache();
                     }
                     return Ok((bytes, ct));
                 }
@@ -324,8 +416,10 @@ impl HitomiClient {
         let folder = PathBuf::from(&dir).join(sanitize(&format!("[{}] {}", id, gallery.title)));
         std::fs::create_dir_all(&folder)?;
 
+        let cancel = self.register_download(id);
         let total = gallery.files.len();
         let done = Arc::new(AtomicUsize::new(0));
+        let failed = Arc::new(AtomicUsize::new(0));
         let _ = app.emit(
             "download-progress",
             serde_json::json!({ "id": id, "done": 0, "total": total }),
@@ -342,12 +436,31 @@ impl HitomiClient {
             let me = self.clone();
             let folder = folder.clone();
             let done = done.clone();
+            let failed = failed.clone();
+            let cancel = cancel.clone();
             let app = app.clone();
             async move {
-                if let Ok((bytes, ct)) = me.fetch_image_bytes(&hash, false).await {
-                    let ext = image_cache::ext_from_content_type(&ct);
-                    let path = folder.join(format!("{:04}.{}", i + 1, ext));
-                    let _ = std::fs::write(path, &bytes);
+                if cancel.load(Ordering::SeqCst) {
+                    return;
+                }
+                if existing_page(&folder, i).is_some() {
+                    let d = done.fetch_add(1, Ordering::SeqCst) + 1;
+                    let _ = app.emit(
+                        "download-progress",
+                        serde_json::json!({ "id": id, "done": d, "total": total }),
+                    );
+                    return;
+                }
+                let ok = match me.fetch_image_bytes(&hash, false).await {
+                    Ok((bytes, ct)) => {
+                        let ext = image_cache::ext_from_content_type(&ct);
+                        let path = folder.join(format!("{:04}.{}", i + 1, ext));
+                        std::fs::write(path, &bytes).is_ok()
+                    }
+                    Err(_) => false,
+                };
+                if !ok {
+                    failed.fetch_add(1, Ordering::SeqCst);
                 }
                 let d = done.fetch_add(1, Ordering::SeqCst) + 1;
                 let _ = app.emit(
@@ -358,12 +471,23 @@ impl HitomiClient {
         });
 
         stream::iter(tasks).buffer_unordered(4).collect::<Vec<()>>().await;
+        self.finish_download(id);
 
+        let failed = failed.load(Ordering::SeqCst);
+        let done = done.load(Ordering::SeqCst);
         let folder_str = folder.to_string_lossy().to_string();
-        let _ = app.emit(
-            "download-done",
-            serde_json::json!({ "id": id, "folder": folder_str }),
-        );
+
+        if cancel.load(Ordering::SeqCst) {
+            let _ = app.emit(
+                "download-cancelled",
+                serde_json::json!({ "id": id, "done": done, "total": total }),
+            );
+        } else {
+            let _ = app.emit(
+                "download-done",
+                serde_json::json!({ "id": id, "folder": folder_str, "total": total, "failed": failed }),
+            );
+        }
         Ok(folder_str)
     }
 
@@ -439,10 +563,33 @@ fn sanitize(name: &str) -> String {
     let trimmed = cleaned.trim().trim_matches('.').trim();
     let limited: String = trimmed.chars().take(150).collect();
     if limited.is_empty() {
-        "untitled".to_string()
+        return "untitled".to_string();
+    }
+    if is_reserved_name(&limited) {
+        format!("_{limited}")
     } else {
         limited
     }
+}
+
+fn is_reserved_name(name: &str) -> bool {
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    RESERVED.contains(&stem.as_str())
+}
+
+fn existing_page(folder: &std::path::Path, index: usize) -> Option<PathBuf> {
+    const EXTS: [&str; 7] = ["webp", "avif", "jpg", "png", "gif", "jxl", "img"];
+    for ext in EXTS {
+        let path = folder.join(format!("{:04}.{}", index + 1, ext));
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

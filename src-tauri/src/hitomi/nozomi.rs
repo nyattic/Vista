@@ -56,10 +56,7 @@ pub fn build_browse_nozomi_urls(
     if gtype == GalleryType::All {
         vec![format!("{base}/index-{lang}.nozomi")]
     } else {
-        vec![
-            format!("{base}/type/{}-{}.nozomi", gtype.slug(), lang),
-            format!("{base}/index-{lang}.nozomi"),
-        ]
+        vec![format!("{base}/type/{}-{}.nozomi", gtype.slug(), lang)]
     }
 }
 

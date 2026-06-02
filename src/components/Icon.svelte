@@ -71,5 +71,25 @@
   {:else if name === 'clock'}
     <circle cx="12" cy="12" r="9" />
     <path d="M12 7.5V12l3 2" />
+  {:else if name === 'play'}
+    <path d="M7 4.5 19 12 7 19.5z" />
+  {:else if name === 'pause'}
+    <path d="M9 5v14M15 5v14" />
+  {:else if name === 'book-open'}
+    <path d="M12 6.5C10.5 5 7.5 4.5 4 5v13c3.5-.5 6.5 0 8 1.5 1.5-1.5 4.5-2 8-1.5V5c-3.5-.5-6.5 0-8 1.5Z" />
+    <path d="M12 6.5v13" />
+  {:else if name === 'columns'}
+    <rect x="4" y="4" width="7" height="16" rx="1" />
+    <rect x="13" y="4" width="7" height="16" rx="1" />
+  {:else if name === 'scroll'}
+    <rect x="5" y="3.5" width="14" height="17" rx="2" />
+    <path d="M9 8h6M9 12h6M9 16h4" />
+  {:else if name === 'share'}
+    <circle cx="6" cy="12" r="2.5" />
+    <circle cx="18" cy="6" r="2.5" />
+    <circle cx="18" cy="18" r="2.5" />
+    <path d="m8.2 10.8 7.6-3.6M8.2 13.2l7.6 3.6" />
+  {:else if name === 'check'}
+    <path d="m5 12.5 4.5 4.5L19 7" />
   {/if}
 </svg>

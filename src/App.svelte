@@ -12,15 +12,18 @@
   import Pager from './components/Pager.svelte';
   import Reader from './components/Reader.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
+  import DownloadsPanel from './components/DownloadsPanel.svelte';
 
   let systemLight = $state(false);
   let showSettings = $state(false);
+  let showDownloads = $state(false);
 
   onMount(() => {
     const mq = window.matchMedia('(prefers-color-scheme: light)');
     systemLight = mq.matches;
     const handler = (e: MediaQueryListEvent) => (systemLight = e.matches);
     mq.addEventListener('change', handler);
+    settingsStore.init();
     downloadStore.init();
     libraryStore.init();
     galleryStore.load(1);
@@ -36,7 +39,10 @@
 </script>
 
 <main class="grid h-screen grid-rows-[48px_36px_minmax(0,1fr)] bg-room-bg text-room-text">
-  <Header onopensettings={() => (showSettings = true)} />
+  <Header
+    onopensettings={() => (showSettings = true)}
+    onopendownloads={() => (showDownloads = !showDownloads)}
+  />
   <Toolbar />
   <section class="grid min-h-0 grid-cols-[300px_minmax(0,1fr)]">
     <Sidebar />
@@ -49,6 +55,10 @@
 
 {#if readerStore.isOpen}
   <Reader />
+{/if}
+
+{#if showDownloads}
+  <DownloadsPanel onclose={() => (showDownloads = false)} />
 {/if}
 
 {#if showSettings}

@@ -1,18 +1,5 @@
 use super::nozomi::nozomi_url_from_args;
 
-const PREFIXES: [&str; 10] = [
-    "language:",
-    "artist:",
-    "tag:",
-    "female:",
-    "male:",
-    "title:",
-    "type:",
-    "series:",
-    "character:",
-    "group:",
-];
-
 #[derive(Debug, Default, Clone)]
 pub struct SearchTerms {
     pub language: Option<String>,
@@ -28,59 +15,30 @@ pub struct SearchTerms {
 
 pub fn parse(query: &str) -> SearchTerms {
     let mut t = SearchTerms::default();
-    let mut idx = 0usize;
 
-    while idx < query.len() {
-        let slice = &query[idx..];
-
-        let mut nearest: Option<(usize, &str)> = None;
-        for p in PREFIXES {
-            if let Some(rel) = slice.find(p) {
-                let abs = idx + rel;
-                if nearest.map_or(true, |(pos, _)| abs < pos) {
-                    nearest = Some((abs, p));
+    for token in query.split_whitespace() {
+        match token.split_once(':') {
+            Some((prefix, value)) => {
+                let value = value.trim();
+                if value.is_empty() {
+                    continue;
+                }
+                match prefix {
+                    "language" => t.language = Some(value.to_string()),
+                    "artist" => t.artists.push(value.to_string()),
+                    "tag" => t.tags.push(format!("tag:{value}")),
+                    "female" => t.tags.push(format!("female:{value}")),
+                    "male" => t.tags.push(format!("male:{value}")),
+                    "title" => t.titles.push(value.to_string()),
+                    "type" => t.types.push(value.to_string()),
+                    "series" => t.series.push(value.to_string()),
+                    "character" => t.characters.push(value.to_string()),
+                    "group" => t.groups.push(value.to_string()),
+                    _ => t.general.push(token.to_string()),
                 }
             }
+            None => t.general.push(token.to_string()),
         }
-
-        let Some((pos, prefix)) = nearest else {
-            let remaining = query[idx..].trim();
-            if !remaining.is_empty() {
-                t.general.push(remaining.to_string());
-            }
-            break;
-        };
-
-        let value_start = pos + prefix.len();
-        let mut value_end = query.len();
-        let after = &query[value_start..];
-        for np in PREFIXES {
-            if let Some(rel) = after.find(np) {
-                let abs = value_start + rel;
-                if abs < value_end {
-                    value_end = abs;
-                }
-            }
-        }
-
-        let value = query[value_start..value_end].trim().to_string();
-        let clean = &prefix[..prefix.len() - 1];
-
-        match clean {
-            "language" => t.language = Some(value),
-            "artist" => t.artists.push(value),
-            "tag" => t.tags.push(format!("tag:{value}")),
-            "female" => t.tags.push(format!("female:{value}")),
-            "male" => t.tags.push(format!("male:{value}")),
-            "title" => t.titles.push(value),
-            "type" => t.types.push(value),
-            "series" => t.series.push(value),
-            "character" => t.characters.push(value),
-            "group" => t.groups.push(value),
-            _ => t.general.push(format!("{clean}:{value}")),
-        }
-
-        idx = value_end;
     }
 
     t
@@ -128,4 +86,65 @@ pub fn constraint_to_nozomi_url(constraint: &str) -> Option<String> {
         _ => return None,
     };
     Some(url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_general_term() {
+        let t = parse("naruto");
+        assert_eq!(t.general, vec!["naruto"]);
+        assert_eq!(build_constraints(&t), vec!["tag:naruto"]);
+    }
+
+    #[test]
+    fn multiple_general_terms_are_anded() {
+        let t = parse("naruto sasuke");
+        assert_eq!(t.general, vec!["naruto", "sasuke"]);
+        assert_eq!(build_constraints(&t), vec!["tag:naruto", "tag:sasuke"]);
+    }
+
+    #[test]
+    fn mixed_prefixes_and_free_text() {
+        let t = parse("big_breasts artist:foo language:korean female:sole_female");
+        assert_eq!(t.general, vec!["big_breasts"]);
+        assert_eq!(t.artists, vec!["foo"]);
+        assert_eq!(t.language.as_deref(), Some("korean"));
+        assert_eq!(t.tags, vec!["female:sole_female"]);
+    }
+
+    #[test]
+    fn leading_free_text_before_prefix_is_kept() {
+        let t = parse("naruto artist:kishimoto");
+        assert_eq!(t.general, vec!["naruto"]);
+        assert_eq!(t.artists, vec!["kishimoto"]);
+    }
+
+    #[test]
+    fn extra_whitespace_is_ignored() {
+        let t = parse("   tag:foo    bar   ");
+        assert_eq!(t.tags, vec!["tag:foo"]);
+        assert_eq!(t.general, vec!["bar"]);
+    }
+
+    #[test]
+    fn empty_prefix_value_is_skipped() {
+        let t = parse("artist: tag:foo");
+        assert!(t.artists.is_empty());
+        assert_eq!(t.tags, vec!["tag:foo"]);
+    }
+
+    #[test]
+    fn unknown_prefix_kept_as_general() {
+        let t = parse("weird:thing");
+        assert_eq!(t.general, vec!["weird:thing"]);
+    }
+
+    #[test]
+    fn empty_query_yields_no_constraints() {
+        let t = parse("   ");
+        assert!(build_constraints(&t).is_empty());
+    }
 }

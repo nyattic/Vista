@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 fn key(hash: &str, thumb: bool) -> String {
     format!("{hash}-{}", if thumb { "t" } else { "f" })
@@ -55,6 +56,45 @@ pub fn size(dir: &Path) -> u64 {
         total
     }
     walk(dir)
+}
+
+pub fn enforce_limit(dir: &Path, max_bytes: u64) {
+    if max_bytes == 0 {
+        return;
+    }
+
+    let mut files: Vec<(PathBuf, u64, SystemTime)> = Vec::new();
+    let mut total: u64 = 0;
+    fn collect(p: &Path, out: &mut Vec<(PathBuf, u64, SystemTime)>, total: &mut u64) {
+        if let Ok(entries) = fs::read_dir(p) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    collect(&path, out, total);
+                } else if let Ok(meta) = entry.metadata() {
+                    let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                    *total += meta.len();
+                    out.push((path, meta.len(), mtime));
+                }
+            }
+        }
+    }
+    collect(dir, &mut files, &mut total);
+
+    if total <= max_bytes {
+        return;
+    }
+
+    files.sort_by_key(|(_, _, mtime)| *mtime);
+    let target = max_bytes / 10 * 9;
+    for (path, sz, _) in files {
+        if total <= target {
+            break;
+        }
+        if fs::remove_file(&path).is_ok() {
+            total = total.saturating_sub(sz);
+        }
+    }
 }
 
 pub fn ext_from_content_type(ct: &str) -> &'static str {

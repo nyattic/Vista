@@ -3,9 +3,14 @@
   import { imageSrc } from '$lib/api';
   import { readerStore } from '$lib/reader-store.svelte';
   import { libraryStore } from '$lib/library-store.svelte';
+  import { settingsStore } from '$lib/settings-store.svelte';
   import Icon from './Icon.svelte';
 
   const gallery = $derived(readerStore.gallery!);
+  const mode = $derived(settingsStore.readingMode);
+  const rtl = $derived(settingsStore.readingDirection === 'rtl');
+  const lastIndex = $derived(gallery.files.length - 1);
+  const step = $derived(mode === 'spread' ? 2 : 1);
 
   let scroller = $state<HTMLDivElement | null>(null);
   let pageEls: HTMLElement[] = $state([]);
@@ -16,15 +21,28 @@
   let scrolled = false;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const lastIndex = $derived(gallery.files.length - 1);
+  const leftIdx = $derived(mode === 'spread' ? (rtl ? current + 1 : current) : current);
+  const rightIdx = $derived(mode === 'spread' ? (rtl ? current : current + 1) : current);
 
   onMount(() => {
     const g = readerStore.gallery!;
     const saved = libraryStore.progressOf(g.id);
-    initialPage = readerStore.startPage || (saved && saved.page > 1 ? saved.page - 1 : 0);
-    current = initialPage;
+    let start = readerStore.startPage || (saved && saved.page > 1 ? saved.page - 1 : 0);
+    start = Math.max(0, Math.min(g.files.length - 1, start));
+    initialPage = start;
+    current = mode === 'spread' ? start - (start % 2) : start;
     libraryStore.record(g);
   });
+
+  function clampBase(i: number): number {
+    let v = Math.max(0, Math.min(lastIndex, i));
+    if (mode === 'spread') v -= v % 2;
+    return v;
+  }
+
+  function go(deltaReading: number) {
+    current = clampBase(current + deltaReading * step);
+  }
 
   function close() {
     readerStore.close();
@@ -43,7 +61,7 @@
     zoomed = null;
   }
 
-  function step(delta: number) {
+  function zoomStep(delta: number) {
     if (zoomed === null) return;
     const next = Math.max(0, Math.min(lastIndex, zoomed + delta));
     zoomed = next;
@@ -55,35 +73,67 @@
     const n = Number(jumpInput);
     if (!Number.isFinite(n)) return;
     const idx = Math.max(0, Math.min(lastIndex, Math.floor(n) - 1));
-    zoomed = idx;
-    current = idx;
+    if (mode === 'continuous') {
+      zoomed = idx;
+      current = idx;
+    } else {
+      current = clampBase(idx);
+    }
   }
 
   $effect(() => {
     if (zoomed !== null) jumpInput = String(zoomed + 1);
+    else if (mode !== 'continuous') jumpInput = String(current + 1);
+  });
+
+  $effect(() => {
+    if (mode === 'spread' && current % 2 !== 0) current -= 1;
   });
 
   function onkeydown(e: KeyboardEvent) {
     const tag = (e.target as HTMLElement | null)?.tagName;
     if (tag === 'INPUT' && e.key !== 'Escape') return;
-    if (zoomed !== null) {
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        step(-1);
-      } else if (e.key === 'ArrowRight' || e.key === ' ') {
-        e.preventDefault();
-        step(1);
-      } else if (e.key === 'Escape') {
-        closeZoom();
+
+    if (mode === 'continuous') {
+      if (zoomed !== null) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          zoomStep(-1);
+        } else if (e.key === 'ArrowRight' || e.key === ' ') {
+          e.preventDefault();
+          zoomStep(1);
+        } else if (e.key === 'Escape') {
+          closeZoom();
+        }
+        return;
       }
+      if (e.key === 'Escape') close();
+      else if (e.key === 'Home') scroller?.scrollTo({ top: 0 });
+      else if (e.key === 'End') scroller?.scrollTo({ top: scroller?.scrollHeight ?? 0 });
       return;
     }
-    if (e.key === 'Escape') close();
-    else if (e.key === 'Home') scroller?.scrollTo({ top: 0 });
-    else if (e.key === 'End') scroller?.scrollTo({ top: scroller?.scrollHeight ?? 0 });
+
+    if (e.key === 'Escape') {
+      close();
+      return;
+    }
+    const nextKey = rtl ? 'ArrowLeft' : 'ArrowRight';
+    const prevKey = rtl ? 'ArrowRight' : 'ArrowLeft';
+    if (e.key === nextKey || e.key === ' ') {
+      e.preventDefault();
+      go(1);
+    } else if (e.key === prevKey) {
+      e.preventDefault();
+      go(-1);
+    } else if (e.key === 'Home') {
+      current = 0;
+    } else if (e.key === 'End') {
+      current = clampBase(lastIndex);
+    }
   }
 
   $effect(() => {
+    if (mode !== 'continuous') return;
     const el = pageEls[initialPage];
     if (el && scroller && !scrolled) {
       scroller.scrollTo({ top: el.offsetTop });
@@ -100,7 +150,17 @@
   });
 
   $effect(() => {
-    if (!scroller || !pageEls.length) return;
+    if (mode === 'continuous') return;
+    for (let k = 1; k <= step + 2; k++) {
+      const i = current + k;
+      if (i < 0 || i > lastIndex) continue;
+      const img = new Image();
+      img.src = imageSrc(gallery.files[i].hash, false);
+    }
+  });
+
+  $effect(() => {
+    if (mode !== 'continuous' || !scroller || !pageEls.length) return;
     const ratios = new Map<number, number>();
     const io = new IntersectionObserver(
       (entries) => {
@@ -145,26 +205,105 @@
     </span>
   </div>
 
-  <div bind:this={scroller} class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-auto py-1">
-    {#each gallery.files as file, i (i)}
-      <button
-        bind:this={pageEls[i]}
-        data-page={i}
-        class="block w-full max-w-[1000px] cursor-zoom-in bg-room-bg"
-        style={`aspect-ratio: ${file.width || 7} / ${file.height || 10}`}
-        onclick={() => openZoom(i)}
-        aria-label={`Zoom page ${i + 1}`}
-      >
+  {#if mode === 'continuous'}
+    <div
+      bind:this={scroller}
+      class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-auto py-1"
+    >
+      {#each gallery.files as file, i (i)}
+        <button
+          bind:this={pageEls[i]}
+          data-page={i}
+          class="block w-full max-w-[1000px] cursor-zoom-in bg-room-bg"
+          style={`aspect-ratio: ${file.width || 7} / ${file.height || 10}`}
+          onclick={() => openZoom(i)}
+          aria-label={`Zoom page ${i + 1}`}
+        >
+          <img
+            class="h-full w-full object-contain"
+            src={imageSrc(file.hash, false)}
+            alt={`page ${i + 1}`}
+            loading="lazy"
+            draggable="false"
+          />
+        </button>
+      {/each}
+    </div>
+  {:else}
+    <div class="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+      {#if mode === 'spread'}
+        <div class="flex h-full w-full items-center justify-center gap-0.5">
+          {#if leftIdx <= lastIndex}
+            <img
+              class="h-full max-w-[50%] object-contain"
+              src={imageSrc(gallery.files[leftIdx].hash, false)}
+              alt={`page ${leftIdx + 1}`}
+              draggable="false"
+            />
+          {/if}
+          {#if rightIdx <= lastIndex && rightIdx !== leftIdx}
+            <img
+              class="h-full max-w-[50%] object-contain"
+              src={imageSrc(gallery.files[rightIdx].hash, false)}
+              alt={`page ${rightIdx + 1}`}
+              draggable="false"
+            />
+          {/if}
+        </div>
+      {:else}
         <img
-          class="h-full w-full object-contain"
-          src={imageSrc(file.hash, false)}
-          alt={`page ${i + 1}`}
-          loading="lazy"
+          class="max-h-full max-w-full object-contain"
+          src={imageSrc(gallery.files[current].hash, false)}
+          alt={`page ${current + 1}`}
           draggable="false"
         />
+      {/if}
+
+      <button
+        class="absolute left-0 top-0 h-full w-1/3 cursor-w-resize"
+        onclick={() => go(rtl ? 1 : -1)}
+        aria-label="Left"
+        tabindex="-1"
+      ></button>
+      <button
+        class="absolute right-0 top-0 h-full w-1/3 cursor-e-resize"
+        onclick={() => go(rtl ? -1 : 1)}
+        aria-label="Right"
+        tabindex="-1"
+      ></button>
+
+      <button
+        class="absolute left-3 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white disabled:pointer-events-none disabled:opacity-25"
+        onclick={() => go(rtl ? 1 : -1)}
+        disabled={current === 0}
+        aria-label={rtl ? 'Next' : 'Previous'}
+      >
+        <Icon name="chevron-left" class="size-6" />
       </button>
-    {/each}
-  </div>
+      <button
+        class="absolute right-3 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white disabled:pointer-events-none disabled:opacity-25"
+        onclick={() => go(rtl ? -1 : 1)}
+        disabled={current >= clampBase(lastIndex)}
+        aria-label={rtl ? 'Previous' : 'Next'}
+      >
+        <Icon name="chevron-right" class="size-6" />
+      </button>
+
+      <form
+        class="absolute left-1/2 bottom-3 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/50 px-3 py-1 font-mono text-[11px] tabular-nums text-white/90"
+        onsubmit={jumpTo}
+      >
+        <input
+          class="w-10 rounded bg-white/10 text-center text-white focus:bg-white/20 focus:outline-none"
+          bind:value={jumpInput}
+          inputmode="numeric"
+          aria-label="Jump to page"
+        />
+        <span class="text-white/60">/</span>
+        <span>{gallery.pageCount}</span>
+      </form>
+    </div>
+  {/if}
 </div>
 
 {#if zoomed !== null}
@@ -185,7 +324,7 @@
 
     <button
       class="absolute left-3 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white disabled:pointer-events-none disabled:opacity-25"
-      onclick={() => step(-1)}
+      onclick={() => zoomStep(-1)}
       disabled={zoomed === 0}
       aria-label="Previous page"
     >
@@ -193,7 +332,7 @@
     </button>
     <button
       class="absolute right-3 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white disabled:pointer-events-none disabled:opacity-25"
-      onclick={() => step(1)}
+      onclick={() => zoomStep(1)}
       disabled={zoomed === lastIndex}
       aria-label="Next page"
     >

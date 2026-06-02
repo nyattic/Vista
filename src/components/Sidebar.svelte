@@ -28,6 +28,22 @@
     if (galleryStore.view === 'history') galleryStore.load(1);
   }
 
+  let shareCopied = $state(false);
+  let shareTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function share() {
+    if (!gallery) return;
+    const url = `https://hitomi.la/reader/${gallery.id}.html`;
+    try {
+      await navigator.clipboard.writeText(url);
+      shareCopied = true;
+      clearTimeout(shareTimer);
+      shareTimer = setTimeout(() => (shareCopied = false), 1500);
+    } catch {
+      /* ignore */
+    }
+  }
+
   const metaRows = $derived(
     gallery
       ? [
@@ -111,13 +127,34 @@
                 <Icon name="heart" class="size-4" filled={fav} />
               </button>
               <button
-                class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text disabled:opacity-50"
-                onclick={() => downloadStore.start(gallery.id)}
-                disabled={!!dl && !dl.finished && !dl.error}
-                title="Download"
+                class="flex items-center justify-center rounded-[3px] border px-3 transition {shareCopied
+                  ? 'border-room-accent/50 text-room-accent'
+                  : 'border-room-line text-room-text-mid hover:border-room-line-strong hover:text-room-text'}"
+                onclick={share}
+                title="Copy link"
+                aria-label="Share"
               >
-                <Icon name="download" class="size-4" />
+                <Icon name={shareCopied ? 'check' : 'share'} class="size-4" />
               </button>
+              {#if dl?.running}
+                <button
+                  class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
+                  onclick={() => downloadStore.cancel(gallery.id)}
+                  title="Pause download"
+                  aria-label="Pause download"
+                >
+                  <Icon name="close" class="size-4" />
+                </button>
+              {:else}
+                <button
+                  class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
+                  onclick={() => downloadStore.start(gallery.id, gallery.title)}
+                  title={dl?.paused ? 'Resume download' : 'Download'}
+                  aria-label="Download"
+                >
+                  <Icon name="download" class="size-4" />
+                </button>
+              {/if}
             </div>
 
             {#if prog && prog.total > 0}
@@ -142,6 +179,12 @@
               <div class="text-[11px]">
                 {#if dl.error}
                   <span class="text-[#ff6b6b]">Download failed: {dl.error}</span>
+                {:else if dl.paused}
+                  <span class="text-[#e0a458]">Paused · {dl.done}/{dl.total || '?'}</span>
+                {:else if dl.finished && dl.failed}
+                  <span class="text-[#e0a458]"
+                    >Downloaded · {dl.total - dl.failed}/{dl.total} ({dl.failed} failed)</span
+                  >
                 {:else if dl.finished}
                   <span class="text-room-accent">Downloaded · {dl.total} pages</span>
                 {:else}

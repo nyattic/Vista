@@ -10,3 +10,8 @@ pub mod url_gen;
 
 pub use client::HitomiClient;
 pub use models::{Gallery, GalleryPage, GalleryType, SortOrder, Suggestion};
+
+pub fn is_valid_hash(hash: &str) -> bool {
+    let len = hash.len();
+    (3..=64).contains(&len) && hash.bytes().all(|b| b.is_ascii_hexdigit())
+}

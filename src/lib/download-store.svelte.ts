@@ -1,11 +1,16 @@
 import { listen } from '@tauri-apps/api/event';
-import { downloadGallery, defaultDownloadDir } from './api';
+import { downloadGallery, cancelDownload, defaultDownloadDir } from './api';
 import { settingsStore } from './settings-store.svelte';
 
 export interface DownloadState {
+  id: number;
+  title: string;
   done: number;
   total: number;
   finished: boolean;
+  running: boolean;
+  paused: boolean;
+  failed?: number;
   folder?: string;
   error?: string;
 }
@@ -19,6 +24,14 @@ interface ProgressEvent {
 interface DoneEvent {
   id: number;
   folder: string;
+  total: number;
+  failed: number;
+}
+
+interface CancelledEvent {
+  id: number;
+  done: number;
+  total: number;
 }
 
 class DownloadStore {
@@ -32,16 +45,39 @@ class DownloadStore {
     listen<ProgressEvent>('download-progress', (e) => {
       const { id, done, total } = e.payload;
       const prev = this.jobs[id];
+      if (!prev) return;
       this.jobs = {
         ...this.jobs,
-        [id]: { done, total, finished: false, folder: prev?.folder }
+        [id]: { ...prev, done, total, finished: false, running: true, paused: false }
       };
     });
 
     listen<DoneEvent>('download-done', (e) => {
-      const { id, folder } = e.payload;
-      const prev = this.jobs[id] ?? { done: 0, total: 0 };
-      this.jobs = { ...this.jobs, [id]: { ...prev, finished: true, folder } };
+      const { id, folder, total, failed } = e.payload;
+      const prev = this.jobs[id];
+      if (!prev) return;
+      this.jobs = {
+        ...this.jobs,
+        [id]: {
+          ...prev,
+          finished: true,
+          running: false,
+          paused: false,
+          folder,
+          failed,
+          total: total ?? prev.total
+        }
+      };
+    });
+
+    listen<CancelledEvent>('download-cancelled', (e) => {
+      const { id, done, total } = e.payload;
+      const prev = this.jobs[id];
+      if (!prev) return;
+      this.jobs = {
+        ...this.jobs,
+        [id]: { ...prev, done, total, finished: false, running: false, paused: true }
+      };
     });
   }
 
@@ -49,8 +85,17 @@ class DownloadStore {
     return this.jobs[id];
   }
 
-  async start(id: number) {
-    if (this.jobs[id] && !this.jobs[id].finished && !this.jobs[id].error) return;
+  get list(): DownloadState[] {
+    return Object.values(this.jobs);
+  }
+
+  get activeCount(): number {
+    return this.list.filter((j) => j.running).length;
+  }
+
+  async start(id: number, title: string) {
+    const cur = this.jobs[id];
+    if (cur?.running) return;
 
     let dir = settingsStore.downloadDir;
     if (!dir) {
@@ -58,17 +103,69 @@ class DownloadStore {
       if (dir) settingsStore.setDownloadDir(dir);
     }
     if (!dir) {
-      this.jobs = { ...this.jobs, [id]: { done: 0, total: 0, finished: true, error: 'no download folder' } };
+      this.jobs = {
+        ...this.jobs,
+        [id]: {
+          id,
+          title,
+          done: 0,
+          total: 0,
+          finished: true,
+          running: false,
+          paused: false,
+          error: 'no download folder'
+        }
+      };
       return;
     }
 
-    this.jobs = { ...this.jobs, [id]: { done: 0, total: 0, finished: false } };
+    this.jobs = {
+      ...this.jobs,
+      [id]: {
+        id,
+        title,
+        done: cur?.done ?? 0,
+        total: cur?.total ?? 0,
+        finished: false,
+        running: true,
+        paused: false,
+        error: undefined
+      }
+    };
     try {
       await downloadGallery(id, dir);
     } catch (e) {
-      const prev = this.jobs[id] ?? { done: 0, total: 0 };
-      this.jobs = { ...this.jobs, [id]: { ...prev, finished: true, error: String(e) } };
+      const prev = this.jobs[id];
+      this.jobs = {
+        ...this.jobs,
+        [id]: {
+          ...(prev ?? { id, title, done: 0, total: 0 }),
+          finished: true,
+          running: false,
+          paused: false,
+          error: String(e)
+        }
+      };
     }
+  }
+
+  async cancel(id: number) {
+    const prev = this.jobs[id];
+    if (!prev || !prev.running) return;
+    await cancelDownload(id).catch(() => {});
+  }
+
+  remove(id: number) {
+    const { [id]: _, ...rest } = this.jobs;
+    this.jobs = rest;
+  }
+
+  clearFinished() {
+    const rest: Record<number, DownloadState> = {};
+    for (const job of this.list) {
+      if (job.running || job.paused) rest[job.id] = job;
+    }
+    this.jobs = rest;
   }
 }
 
