@@ -204,6 +204,10 @@ impl HitomiClient {
     }
 
     pub async fn fetch_gallery_info(&self, id: i64) -> AppResult<Gallery> {
+        retry(|| self.fetch_gallery_info_once(id)).await
+    }
+
+    async fn fetch_gallery_info_once(&self, id: i64) -> AppResult<Gallery> {
         let url = format!("https://{}/galleries/{}.js", config::LTN_DOMAIN, id);
         let resp = self
             .http
@@ -557,11 +561,27 @@ impl HitomiClient {
         dir: String,
         pages: Option<Vec<usize>>,
     ) -> AppResult<DownloadResult> {
+        let cancel = self.register_download(id)?;
+        let out = self
+            .clone()
+            .run_download(app, id, dir, pages, cancel)
+            .await;
+        self.finish_download(id);
+        out
+    }
+
+    async fn run_download(
+        self: Arc<Self>,
+        app: AppHandle,
+        id: i64,
+        dir: String,
+        pages: Option<Vec<usize>>,
+        cancel: Arc<AtomicBool>,
+    ) -> AppResult<DownloadResult> {
         let gallery = self.fetch_gallery_info(id).await?;
         let folder = PathBuf::from(&dir).join(sanitize(&format!("[{}] {}", id, gallery.title)));
         std::fs::create_dir_all(&folder)?;
 
-        let cancel = self.register_download(id)?;
         let total = gallery.files.len();
         let done = Arc::new(AtomicUsize::new(0));
         let failed = Arc::new(AtomicUsize::new(0));
@@ -640,7 +660,6 @@ impl HitomiClient {
             .buffer_unordered(4)
             .collect::<Vec<()>>()
             .await;
-        self.finish_download(id);
 
         let failed = failed.load(Ordering::SeqCst);
         let done = done.load(Ordering::SeqCst);
@@ -689,6 +708,10 @@ impl HitomiClient {
     }
 
     async fn try_fetch_image(&self, url: &str) -> AppResult<(Vec<u8>, String)> {
+        retry(|| self.try_fetch_image_once(url)).await
+    }
+
+    async fn try_fetch_image_once(&self, url: &str) -> AppResult<(Vec<u8>, String)> {
         let resp = self
             .http
             .get(url)
@@ -730,6 +753,35 @@ impl HitomiClient {
             return Err(AppError::Other("empty image response".into()));
         }
         Ok((out, content_type))
+    }
+}
+
+async fn retry<F, Fut, T>(mut f: F) -> AppResult<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = AppResult<T>>,
+{
+    const MAX_ATTEMPTS: u32 = 3;
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match f().await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                if attempt >= MAX_ATTEMPTS || !is_retryable(&e) {
+                    return Err(e);
+                }
+                tokio::time::sleep(Duration::from_millis(200 * attempt as u64)).await;
+            }
+        }
+    }
+}
+
+fn is_retryable(e: &AppError) -> bool {
+    match e {
+        AppError::Network(err) => err.is_timeout() || err.is_connect(),
+        AppError::Http { status, .. } => *status == 429 || (500..600).contains(status),
+        _ => false,
     }
 }
 
@@ -798,7 +850,7 @@ fn is_reserved_name(name: &str) -> bool {
     RESERVED.contains(&stem.as_str())
 }
 
-fn existing_page(folder: &std::path::Path, index: usize) -> Option<PathBuf> {
+pub(crate) fn existing_page(folder: &std::path::Path, index: usize) -> Option<PathBuf> {
     const EXTS: [&str; 7] = ["webp", "avif", "jpg", "png", "gif", "jxl", "img"];
     for ext in EXTS {
         let path = folder.join(format!("{:04}.{}", index + 1, ext));
@@ -818,6 +870,24 @@ mod tests {
     use super::*;
 
     const TEST_PAGE_SIZE: usize = 20;
+
+    #[test]
+    fn retryable_classifies_errors() {
+        assert!(is_retryable(&AppError::Http {
+            status: 503,
+            url: String::new()
+        }));
+        assert!(is_retryable(&AppError::Http {
+            status: 429,
+            url: String::new()
+        }));
+        assert!(!is_retryable(&AppError::Http {
+            status: 404,
+            url: String::new()
+        }));
+        assert!(!is_retryable(&AppError::NotFound("x".into())));
+        assert!(!is_retryable(&AppError::Other("x".into())));
+    }
 
     #[tokio::test]
     #[ignore]

@@ -1,9 +1,10 @@
 use crate::db::{Db, DownloadRecord, Progress};
 use crate::error::{AppError, AppResult};
+use crate::hitomi::client::existing_page;
 use crate::hitomi::{
     is_valid_hash, Gallery, GalleryPage, GalleryType, HitomiClient, SortOrder, Suggestion,
 };
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
@@ -88,17 +89,6 @@ fn validate_download_dir(dir: &str) -> AppResult<String> {
         return Err(AppError::Other("download folder does not exist".into()));
     }
     Ok(path.canonicalize()?.to_string_lossy().to_string())
-}
-
-fn existing_page(folder: &Path, index: usize) -> Option<PathBuf> {
-    const EXTS: [&str; 7] = ["webp", "avif", "jpg", "png", "gif", "jxl", "img"];
-    for ext in EXTS {
-        let path = folder.join(format!("{:04}.{}", index + 1, ext));
-        if path.metadata().map(|m| m.is_file() && m.len() > 0).unwrap_or(false) {
-            return Some(path);
-        }
-    }
-    None
 }
 
 fn with_local_paths(mut record: DownloadRecord) -> DownloadRecord {

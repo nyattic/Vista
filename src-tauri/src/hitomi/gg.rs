@@ -16,7 +16,7 @@ static CASE_RE: Lazy<Regex> =
 static IF_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"if\s+\(g\s*===?\s*(\d+)\)[\s{]*o\s*=\s*(\d+)").unwrap());
 static DEFAULT_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?:var\s|default:)\s*o\s*=\s+(\d+)").unwrap());
+    Lazy::new(|| Regex::new(r"(?:var\s|default:)\s*o\s*=\s*(\d+)").unwrap());
 static B_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"b:\s*["'](.+)["']"#).unwrap());
 
 pub fn fallback() -> GgData {
@@ -81,4 +81,36 @@ pub async fn fetch(client: &reqwest::Client) -> AppResult<GgData> {
     parse(&text)
         .filter(|g| !g.m.is_empty())
         .ok_or_else(|| AppError::Decode("failed to parse gg.js".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE: &str = "var o = 0;\nfunction f(g){switch(g){case 0:\ncase 1:\no = 1;\nbreak;\ncase 2:\no = 2;\nbreak;}\nif (g === 5) o = 3;}\nb: \"1640642964/\"";
+
+    #[test]
+    fn parses_cases_default_if_and_b() {
+        let g = parse(SAMPLE).expect("parse");
+        assert_eq!(g.b, "1640642964");
+        assert_eq!(g.o, 0);
+        assert_eq!(g.m.get(&0), Some(&1));
+        assert_eq!(g.m.get(&1), Some(&1));
+        assert_eq!(g.m.get(&2), Some(&2));
+        assert_eq!(g.m.get(&5), Some(&3));
+    }
+
+    #[test]
+    fn default_without_spaces_is_parsed() {
+        let g = parse("var o=7;").expect("parse");
+        assert_eq!(g.o, 7);
+    }
+
+    #[test]
+    fn fallback_has_full_mapping() {
+        let f = fallback();
+        assert_eq!(f.m.len(), 4096);
+        assert!(f.m.contains_key(&0));
+        assert!(f.m.contains_key(&4095));
+    }
 }
