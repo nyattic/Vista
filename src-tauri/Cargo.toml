@@ -1,6 +1,6 @@
 [package]
 name = "vista"
-version = "0.2.3"
+version = "0.2.4"
 description = "Vista - a cross-platform gallery client"
 authors = ["nyattic"]
 license = "MIT"
