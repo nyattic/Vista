@@ -35,7 +35,7 @@ const isLanguage = (v: unknown): v is Language => LANGUAGES.some((l) => l.value 
 const isTileMin = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= 120 && v <= 400;
 const isCacheLimit = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1_048_576;
+  typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 20_480;
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) &&
   v.length <= 200 &&

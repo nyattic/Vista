@@ -111,11 +111,14 @@ class GalleryStore {
     this.load(1);
   }
 
-  load(p: number, opts?: { select?: 'first' | 'last'; focus?: boolean }) {
+  // `soft` keeps the current grid visible (no loading spinner) while the next
+  // page loads in the background — used for resize-driven page-size changes so
+  // the grid doesn't blank and flash on every window resize.
+  load(p: number, opts?: { select?: 'first' | 'last'; focus?: boolean; soft?: boolean }) {
     this.page = p;
     this.pendingSelect = opts?.select ?? 'first';
     this.pendingFocus = opts?.focus ?? false;
-    this.loading = true;
+    if (!opts?.soft) this.loading = true;
     this.error = null;
     clearTimeout(this.loadTimer);
     this.loadTimer = setTimeout(() => void this.runLoad(p), 130);
@@ -167,7 +170,7 @@ class GalleryStore {
     const firstIndex = (this.page - 1) * this.pageSize;
     this.pageSize = next;
     const nextPage = Math.floor(firstIndex / next) + 1;
-    this.load(nextPage);
+    this.load(nextPage, { soft: true });
   }
 
   // `edge` is set when the flip is triggered by arrow-key navigation past the

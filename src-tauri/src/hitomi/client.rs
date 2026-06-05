@@ -11,17 +11,22 @@ use futures::stream::{self, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 
 const GG_TTL: Duration = Duration::from_secs(30 * 60);
+const GG_FAIL_TTL: Duration = Duration::from_secs(2 * 60);
 const CACHE_SWEEP_EVERY: usize = 200;
+
+type ImageGate = Arc<AsyncMutex<()>>;
+type ImageLocks = Mutex<HashMap<(String, bool), Weak<AsyncMutex<()>>>>;
 
 struct GgCache {
     data: Arc<GgData>,
     fetched_at: Instant,
+    ttl: Duration,
 }
 
 pub struct HitomiClient {
@@ -32,6 +37,7 @@ pub struct HitomiClient {
     cache_limit: AtomicU64,
     writes_since_sweep: AtomicUsize,
     downloads: Mutex<HashMap<i64, Arc<AtomicBool>>>,
+    image_locks: ImageLocks,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -57,6 +63,7 @@ impl HitomiClient {
             cache_limit: AtomicU64::new(config::DEFAULT_IMAGE_CACHE_BYTES),
             writes_since_sweep: AtomicUsize::new(0),
             downloads: Mutex::new(HashMap::new()),
+            image_locks: Mutex::new(HashMap::new()),
         }
     }
 
@@ -81,10 +88,9 @@ impl HitomiClient {
             return;
         }
         let n = self.writes_since_sweep.fetch_add(1, Ordering::Relaxed) + 1;
-        if n < CACHE_SWEEP_EVERY {
+        if n % CACHE_SWEEP_EVERY != 0 {
             return;
         }
-        self.writes_since_sweep.store(0, Ordering::Relaxed);
         let dir = dir.clone();
         tauri::async_runtime::spawn_blocking(move || image_cache::enforce_limit(&dir, limit));
     }
@@ -134,7 +140,7 @@ impl HitomiClient {
         {
             let guard = self.gg.read().await;
             if let Some(c) = guard.as_ref() {
-                if c.fetched_at.elapsed() < GG_TTL {
+                if c.fetched_at.elapsed() < c.ttl {
                     return c.data.clone();
                 }
             }
@@ -145,7 +151,7 @@ impl HitomiClient {
         {
             let guard = self.gg.read().await;
             if let Some(c) = guard.as_ref() {
-                if c.fetched_at.elapsed() < GG_TTL {
+                if c.fetched_at.elapsed() < c.ttl {
                     return c.data.clone();
                 }
             }
@@ -158,6 +164,7 @@ impl HitomiClient {
                 *guard = Some(GgCache {
                     data: data.clone(),
                     fetched_at: Instant::now(),
+                    ttl: GG_TTL,
                 });
                 data
             }
@@ -166,6 +173,7 @@ impl HitomiClient {
                 match guard.as_mut() {
                     Some(c) => {
                         c.fetched_at = Instant::now();
+                        c.ttl = GG_FAIL_TTL;
                         c.data.clone()
                     }
                     None => {
@@ -173,6 +181,7 @@ impl HitomiClient {
                         *guard = Some(GgCache {
                             data: data.clone(),
                             fetched_at: Instant::now(),
+                            ttl: GG_FAIL_TTL,
                         });
                         data
                     }
@@ -472,6 +481,25 @@ impl HitomiClient {
         Ok(out)
     }
 
+    fn read_cache(&self, hash: &str, is_thumbnail: bool) -> Option<(Vec<u8>, String)> {
+        let dir = self.cache_dir.get()?;
+        image_cache::read(dir, hash, is_thumbnail)
+    }
+
+    fn image_gate(&self, hash: &str, is_thumbnail: bool) -> ImageGate {
+        let key = (hash.to_string(), is_thumbnail);
+        let mut map = self.image_locks.lock().unwrap_or_else(|e| e.into_inner());
+        if map.len() > 512 {
+            map.retain(|_, w| w.strong_count() > 0);
+        }
+        if let Some(existing) = map.get(&key).and_then(Weak::upgrade) {
+            return existing;
+        }
+        let arc = Arc::new(AsyncMutex::new(()));
+        map.insert(key, Arc::downgrade(&arc));
+        arc
+    }
+
     pub async fn fetch_image_bytes(
         &self,
         hash: &str,
@@ -480,12 +508,25 @@ impl HitomiClient {
         if !super::is_valid_hash(hash) {
             return Err(AppError::NotFound("invalid image hash".into()));
         }
-        if let Some(dir) = self.cache_dir.get() {
-            if let Some(hit) = image_cache::read(dir, hash, is_thumbnail) {
+        if let Some(hit) = self.read_cache(hash, is_thumbnail) {
+            return Ok(hit);
+        }
+        if self.cache_dir.get().is_some() {
+            let gate = self.image_gate(hash, is_thumbnail);
+            let _guard = gate.lock().await;
+            if let Some(hit) = self.read_cache(hash, is_thumbnail) {
                 return Ok(hit);
             }
+            return self.fetch_image_uncached(hash, is_thumbnail).await;
         }
+        self.fetch_image_uncached(hash, is_thumbnail).await
+    }
 
+    async fn fetch_image_uncached(
+        &self,
+        hash: &str,
+        is_thumbnail: bool,
+    ) -> AppResult<(Vec<u8>, String)> {
         let formats: &[&str] = if is_thumbnail {
             &["webp"]
         } else {
@@ -546,6 +587,7 @@ impl HitomiClient {
             }
             items.push((i, file.hash.clone()));
         }
+        let requested_indices: Vec<usize> = items.iter().map(|(i, _)| *i).collect();
 
         let tasks = items.into_iter().map(|(i, hash)| {
             let me = self.clone();
@@ -603,11 +645,20 @@ impl HitomiClient {
         let failed = failed.load(Ordering::SeqCst);
         let done = done.load(Ordering::SeqCst);
         let skipped = skipped.load(Ordering::SeqCst);
+        let was_cancelled = cancel.load(Ordering::SeqCst);
         let mut failed_pages = failed_pages.lock().map(|p| p.clone()).unwrap_or_default();
+        if was_cancelled {
+            for &i in &requested_indices {
+                if existing_page(&folder, i).is_none() {
+                    failed_pages.push(i + 1);
+                }
+            }
+        }
         failed_pages.sort_unstable();
+        failed_pages.dedup();
         let folder_str = folder.to_string_lossy().to_string();
 
-        if cancel.load(Ordering::SeqCst) {
+        if was_cancelled {
             let _ = app.emit(
                 "download-cancelled",
                 serde_json::json!({ "id": id, "done": done, "total": total }),

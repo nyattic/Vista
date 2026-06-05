@@ -147,3 +147,85 @@ fn dedup(items: Vec<String>) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     items.into_iter().filter(|s| seen.insert(s.clone())).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn gg() -> GgData {
+        let mut m = HashMap::new();
+        for i in 0..4096i64 {
+            m.insert(i, (i % 3) + 1);
+        }
+        GgData {
+            b: "1640642964".to_string(),
+            m,
+            o: 1,
+        }
+    }
+
+    const HASH: &str = "8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b";
+
+    #[test]
+    fn pupil_s_is_deterministic() {
+        assert_eq!(pupil_s("abc"), 0xcab_i64.to_string());
+        assert_eq!(pupil_s("ab"), "0");
+    }
+
+    #[test]
+    fn real_full_path_splits_last_three() {
+        assert_eq!(real_full_path_from_hash("abc"), "c/ab/abc");
+    }
+
+    #[test]
+    fn normalized_base_path_trims_slashes() {
+        assert_eq!(normalized_base_path("/b/"), "b/");
+        assert_eq!(normalized_base_path(""), "");
+        assert_eq!(normalized_base_path("//"), "");
+    }
+
+    #[test]
+    fn normalized_formats_sanitizes_and_defaults() {
+        assert_eq!(
+            normalized_formats(&["WEBP", ".avif", " "]),
+            vec!["webp".to_string(), "avif".to_string()]
+        );
+        assert_eq!(
+            normalized_formats(&[]),
+            vec!["webp".to_string(), "avif".to_string()]
+        );
+        assert_eq!(normalized_formats(&["webp", "webp"]), vec!["webp".to_string()]);
+    }
+
+    #[test]
+    fn image_directory_known_only() {
+        assert_eq!(image_directory("webp"), Some("webp"));
+        assert_eq!(image_directory("avif"), Some("avif"));
+        assert_eq!(image_directory("png"), None);
+    }
+
+    #[test]
+    fn short_hash_yields_no_urls() {
+        assert!(generate_all_urls("ab", false, &gg(), &["webp"]).is_empty());
+    }
+
+    #[test]
+    fn full_image_urls_cover_requested_formats() {
+        let urls = generate_all_urls(HASH, false, &gg(), &["webp", "avif"]);
+        assert_eq!(urls.len(), 2);
+        assert!(urls.iter().all(|u| u.starts_with("https://")));
+        assert!(urls.iter().all(|u| u.contains(config::CDN_DOMAIN)));
+        assert!(urls.iter().any(|u| u.ends_with(".webp")));
+        assert!(urls.iter().any(|u| u.ends_with(".avif")));
+    }
+
+    #[test]
+    fn thumbnail_url_uses_webpsmalltn() {
+        let urls = generate_all_urls(HASH, true, &gg(), &["webp"]);
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].contains("webpsmalltn"));
+        assert!(urls[0].ends_with(".webp"));
+        assert!(urls[0].contains(config::CDN_DOMAIN));
+    }
+}
