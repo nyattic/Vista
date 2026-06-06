@@ -20,19 +20,34 @@ function normalizeTerm(s: string): string {
   return s.toLowerCase().replace(/_/g, ' ').trim();
 }
 
+function blacklistTerms(): Set<string> {
+  return new Set(settingsStore.blacklist.map(normalizeTerm).filter(Boolean));
+}
+
+function matchesTerm(terms: Set<string>, namespace: string, value: string): boolean {
+  const term = normalizeTerm(value);
+  return terms.has(term) || terms.has(`${namespace}:${term}`);
+}
+
 // Whole-token match: a gallery is hidden only when one of its tags (or its
 // label without namespace) or a credited name equals a blacklist term exactly.
 // Substring matching is deliberately avoided so "anal" can't hide "analog".
 function isBlacklisted(g: Gallery, terms: Set<string>): boolean {
   if (!terms.size) return false;
   for (const t of g.tags) {
-    if (terms.has(normalizeTerm(t)) || terms.has(normalizeTerm(parseTag(t).label))) return true;
+    const tag = parseTag(t);
+    const label = normalizeTerm(tag.label);
+    if (terms.has(normalizeTerm(t)) || terms.has(label) || terms.has(`tag:${label}`)) return true;
   }
-  for (const f of g.artists) if (terms.has(normalizeTerm(f))) return true;
-  for (const f of g.groups) if (terms.has(normalizeTerm(f))) return true;
-  for (const f of g.series) if (terms.has(normalizeTerm(f))) return true;
-  for (const f of g.characters) if (terms.has(normalizeTerm(f))) return true;
+  for (const f of g.artists) if (matchesTerm(terms, 'artist', f)) return true;
+  for (const f of g.groups) if (matchesTerm(terms, 'group', f)) return true;
+  for (const f of g.series) if (matchesTerm(terms, 'series', f)) return true;
+  for (const f of g.characters) if (matchesTerm(terms, 'character', f)) return true;
   return false;
+}
+
+function filterBlacklisted(items: Gallery[], terms: Set<string>): Gallery[] {
+  return terms.size ? items.filter((g) => !isBlacklisted(g, terms)) : items;
 }
 
 class GalleryStore {
@@ -56,9 +71,7 @@ class GalleryStore {
   // Memoized filtered list. As a $derived it recomputes only when items or the
   // blacklist change, instead of on every read like the previous getter.
   visible: Gallery[] = $derived.by(() => {
-    const terms = new Set(settingsStore.blacklist.map(normalizeTerm).filter(Boolean));
-    if (!terms.size) return this.items;
-    return this.items.filter((g) => !isBlacklisted(g, terms));
+    return filterBlacklisted(this.items, blacklistTerms());
   });
 
   private token = 0;
@@ -75,7 +88,49 @@ class GalleryStore {
     return this.items.find((g) => g.id === this.selectedId) ?? null;
   }
 
+  private async fetchRemotePage(p: number): Promise<GalleryPage> {
+    return this.activeQuery
+      ? searchGalleries(this.activeQuery, p, this.sort, settingsStore.language, this.pageSize)
+      : fetchGalleries(p, this.gtype, this.sort, settingsStore.language, this.pageSize);
+  }
+
+  private async fetchFilteredRemotePage(p: number, terms: Set<string>): Promise<GalleryPage> {
+    if (!terms.size) return this.fetchRemotePage(p);
+
+    const page = Math.max(1, p);
+    const targetCount = page * this.pageSize;
+    const filtered: Gallery[] = [];
+    const seen = new Set<number>();
+    let rawPage = 1;
+    let rawTotal = 0;
+    let rawTotalPages = 1;
+
+    while (filtered.length < targetCount && rawPage <= rawTotalPages) {
+      const res = await this.fetchRemotePage(rawPage);
+      rawTotal = res.total;
+      rawTotalPages = res.totalPages;
+      for (const gallery of res.items) {
+        if (seen.has(gallery.id)) continue;
+        seen.add(gallery.id);
+        if (!isBlacklisted(gallery, terms)) filtered.push(gallery);
+      }
+      rawPage++;
+    }
+
+    const scannedAll = rawPage > rawTotalPages;
+    const total = scannedAll ? filtered.length : rawTotal;
+    const totalPages = scannedAll
+      ? Math.max(1, Math.ceil(filtered.length / this.pageSize))
+      : rawTotalPages;
+    const resolvedPage = Math.min(page, totalPages);
+    const start = (resolvedPage - 1) * this.pageSize;
+    const items = filtered.slice(start, start + this.pageSize);
+
+    return { items, total, totalPages, page: resolvedPage };
+  }
+
   private async fetchPage(p: number): Promise<GalleryPage> {
+    const terms = blacklistTerms();
     if (this.view === 'favorites' || this.view === 'history' || this.view === 'downloads') {
       if (p <= 1 || this.localItems.length === 0) {
         if (this.view === 'favorites') {
@@ -91,16 +146,15 @@ class GalleryStore {
           }));
         }
       }
-      const total = this.localItems.length;
+      const filtered = filterBlacklisted(this.localItems, terms);
+      const total = filtered.length;
       const totalPages = Math.max(1, Math.ceil(total / this.pageSize));
       const page = Math.max(1, Math.min(totalPages, p));
       const start = (page - 1) * this.pageSize;
-      const items = this.localItems.slice(start, start + this.pageSize);
+      const items = filtered.slice(start, start + this.pageSize);
       return { items, total, totalPages, page };
     }
-    return this.activeQuery
-      ? searchGalleries(this.activeQuery, p, this.sort, settingsStore.language, this.pageSize)
-      : fetchGalleries(p, this.gtype, this.sort, settingsStore.language, this.pageSize);
+    return this.fetchFilteredRemotePage(p, terms);
   }
 
   setView(v: View) {

@@ -67,6 +67,12 @@
     e.preventDefault();
     settingsStore.addBlacklist(newTag);
     newTag = '';
+    galleryStore.load(galleryStore.page);
+  }
+
+  function removeTag(tag: string) {
+    settingsStore.removeBlacklist(tag);
+    galleryStore.load(galleryStore.page);
   }
 
   async function chooseFolder() {
@@ -249,7 +255,7 @@
                   {#each settingsStore.blacklist as tag (tag)}
                     <button
                       class="flex items-center gap-1 rounded-[3px] border border-room-line bg-room-bg px-2 py-0.5 text-[11px] text-room-text-mid hover:border-room-line-strong hover:text-room-text"
-                      onclick={() => settingsStore.removeBlacklist(tag)}
+                      onclick={() => removeTag(tag)}
                       title="Remove"
                     >
                       {tag}
