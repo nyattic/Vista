@@ -28,10 +28,11 @@ export function fetchGallery(id: number): Promise<Gallery> {
 export function searchGalleries(
   query: string,
   page: number,
+  sort: SortOrder,
   language: Language,
   pageSize: number
 ): Promise<GalleryPage> {
-  return invoke('search_galleries', { query, page, language, pageSize });
+  return invoke('search_galleries', { query, page, sort, language, pageSize });
 }
 
 export interface Suggestion {

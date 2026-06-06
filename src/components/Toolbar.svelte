@@ -28,12 +28,11 @@
         sort
       </div>
       {#each SORT_ORDERS as o (o.value)}
-        {@const active = !galleryStore.searching && galleryStore.sort === o.value}
+        {@const active = galleryStore.sort === o.value}
         <button
           class="relative px-3.5 text-[12px] tracking-tight transition-colors duration-150 disabled:opacity-30 {active
             ? 'bg-room-panel-hi text-room-accent'
             : 'text-room-text-mid hover:bg-room-panel-hi hover:text-room-text'}"
-          disabled={galleryStore.searching}
           onclick={() => galleryStore.setSort(o.value)}
         >
           {o.label}

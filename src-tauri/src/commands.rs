@@ -136,6 +136,7 @@ pub async fn search_galleries(
     client: State<'_, Arc<HitomiClient>>,
     query: String,
     page: usize,
+    sort: String,
     language: String,
     page_size: usize,
 ) -> AppResult<GalleryPage> {
@@ -146,6 +147,7 @@ pub async fn search_galleries(
             &query,
             validate_page(page),
             validate_page_size(page_size),
+            SortOrder::from_str(&sort),
             &language,
         )
         .await

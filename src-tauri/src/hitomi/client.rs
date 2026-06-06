@@ -320,9 +320,10 @@ impl HitomiClient {
         query: &str,
         page: usize,
         page_size: usize,
+        sort: SortOrder,
         language: &str,
     ) -> AppResult<GalleryPage> {
-        let ids = self.resolve_search_ids(query, language).await?;
+        let ids = self.resolve_search_ids(query, language, sort).await?;
         Ok(self.paginate_ids(ids, page, page_size).await)
     }
 
@@ -347,11 +348,17 @@ impl HitomiClient {
         }
     }
 
-    async fn resolve_search_ids(&self, query: &str, language: &str) -> AppResult<Vec<i64>> {
+    async fn resolve_search_ids(
+        &self,
+        query: &str,
+        language: &str,
+        sort: SortOrder,
+    ) -> AppResult<Vec<i64>> {
         let mut terms = parse_query(query);
         if terms.language.is_none() && !language.is_empty() && language != "all" {
             terms.language = Some(language.to_string());
         }
+        let effective_language = terms.language.as_deref().unwrap_or("all");
         let constraints = build_constraints(&terms);
 
         let ids = if !constraints.is_empty() {
@@ -360,6 +367,27 @@ impl HitomiClient {
             let url = nozomi_url_from_args("all", "index", "all");
             fetch_all_gallery_ids(&self.http, &url).await?
         };
+
+        if let Some(period) = sort.popular_period() {
+            let lang = if effective_language.is_empty() {
+                "all"
+            } else {
+                effective_language
+            };
+            let popular_url = format!(
+                "https://{}/popular/{}-{}.nozomi",
+                config::LTN_DOMAIN,
+                period,
+                lang
+            );
+            let search_set: HashSet<i64> = ids.into_iter().collect();
+            let popular_ids = fetch_all_gallery_ids(&self.http, &popular_url).await?;
+            let ids = popular_ids
+                .into_iter()
+                .filter(|id| search_set.contains(id))
+                .collect();
+            return Ok(unique_preserve_order(ids));
+        }
 
         Ok(unique_sorted_desc(ids))
     }
@@ -1056,7 +1084,7 @@ mod tests {
     async fn live_search() {
         let client = HitomiClient::new();
         let result = client
-            .search_galleries("male:furry", 3, TEST_PAGE_SIZE, "all")
+            .search_galleries("male:furry", 3, TEST_PAGE_SIZE, SortOrder::Latest, "all")
             .await
             .expect("search failed");
         println!(

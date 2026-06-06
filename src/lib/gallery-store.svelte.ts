@@ -99,7 +99,7 @@ class GalleryStore {
       return { items, total, totalPages, page };
     }
     return this.activeQuery
-      ? searchGalleries(this.activeQuery, p, settingsStore.language, this.pageSize)
+      ? searchGalleries(this.activeQuery, p, this.sort, settingsStore.language, this.pageSize)
       : fetchGalleries(p, this.gtype, this.sort, settingsStore.language, this.pageSize);
   }
 
@@ -194,8 +194,6 @@ class GalleryStore {
   setSort(s: SortOrder) {
     this.view = 'browse';
     this.sort = s;
-    this.query = '';
-    this.activeQuery = '';
     this.load(1);
   }
 
