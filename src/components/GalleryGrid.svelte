@@ -17,7 +17,7 @@
   function columns(): number {
     if (!container) return 1;
     const width = container.clientWidth - GRID_PADDING;
-    return Math.max(1, Math.floor((width + GRID_GAP) / (settingsStore.tileMin + GRID_GAP)));
+    return Math.max(1, Math.floor((width + GRID_GAP) / (settingsStore.effectiveTileMin + GRID_GAP)));
   }
 
   function pageSizeForContainer(): number {
@@ -94,6 +94,7 @@
 
   $effect(() => {
     settingsStore.tileMin;
+    settingsStore.gridScalePct;
     galleryStore.setPageSize(pageSizeForContainer());
   });
 </script>
@@ -129,7 +130,7 @@
   {:else}
     <div
       class="grid gap-2.5"
-      style="grid-template-columns: repeat(auto-fill, minmax({settingsStore.tileMin}px, 1fr));"
+      style="grid-template-columns: repeat(auto-fill, minmax({settingsStore.effectiveTileMin}px, 1fr));"
       role="grid"
     >
       {#each galleryStore.visible as gallery, index (gallery.id)}

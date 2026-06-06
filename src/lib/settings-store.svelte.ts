@@ -11,6 +11,14 @@ const TILE_SIZES = [
   { value: 220, label: 'Spacious' }
 ] as const;
 
+const GRID_SCALE_OPTIONS = [
+  { value: 100, label: '100%' },
+  { value: 125, label: '125%' },
+  { value: 150, label: '150%' },
+  { value: 175, label: '175%' },
+  { value: 200, label: '200%' }
+] as const;
+
 const CACHE_LIMITS = [
   { value: 512, label: '512 MB' },
   { value: 1024, label: '1 GB' },
@@ -34,6 +42,8 @@ const isTheme = (v: unknown): v is Theme => v === 'system' || v === 'dark' || v 
 const isLanguage = (v: unknown): v is Language => LANGUAGES.some((l) => l.value === v);
 const isTileMin = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= 120 && v <= 400;
+const isGridScalePct = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 100 && v <= 200;
 const isCacheLimit = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 20_480;
 const isStringArray = (v: unknown): v is string[] =>
@@ -48,6 +58,7 @@ const isReadingDirection = (v: unknown): v is ReadingDirection => v === 'ltr' ||
 class SettingsStore {
   theme = $state<Theme>(load<Theme>('vista.theme', 'system', isTheme));
   tileMin = $state<number>(load<number>('vista.tileMin', 180, isTileMin));
+  gridScalePct = $state<number>(load<number>('vista.gridScalePct', 100, isGridScalePct));
   language = $state<Language>(load<Language>('vista.language', 'english', isLanguage));
   blacklist = $state<string[]>(load<string[]>('vista.blacklist', [], isStringArray));
   downloadDir = $state<string>(load<string>('vista.downloadDir', '', isString));
@@ -59,7 +70,12 @@ class SettingsStore {
     load<ReadingDirection>('vista.readingDirection', 'ltr', isReadingDirection)
   );
   readonly tileSizes = TILE_SIZES;
+  readonly gridScaleOptions = GRID_SCALE_OPTIONS;
   readonly cacheLimits = CACHE_LIMITS;
+
+  get effectiveTileMin() {
+    return Math.round((this.tileMin * this.gridScalePct) / 100);
+  }
 
   init() {
     void setCacheLimit(this.cacheLimitMb * 1024 * 1024).catch(() => {});
@@ -73,6 +89,12 @@ class SettingsStore {
   setTileMin(n: number) {
     this.tileMin = n;
     localStorage.setItem('vista.tileMin', JSON.stringify(n));
+  }
+
+  setGridScalePct(n: number) {
+    const scale = Math.max(100, Math.min(200, Math.round(n)));
+    this.gridScalePct = scale;
+    localStorage.setItem('vista.gridScalePct', JSON.stringify(scale));
   }
 
   setLanguage(l: Language) {

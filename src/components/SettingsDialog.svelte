@@ -167,6 +167,24 @@
                 {/each}
               </div>
             </section>
+
+            <section>
+              <div class="mb-2 text-[12px] text-room-text">Grid scale</div>
+              <div class="flex gap-1.5">
+                {#each settingsStore.gridScaleOptions as scale (scale.value)}
+                  <button
+                    class="flex-1 rounded-[3px] border px-2 py-1.5 font-mono text-[11px] tabular-nums transition {settingsStore.gridScalePct ===
+                    scale.value
+                      ? 'border-room-accent bg-room-panel-hi text-room-accent'
+                      : 'border-room-line text-room-text-mid hover:border-room-line-strong hover:text-room-text'}"
+                    onclick={() => settingsStore.setGridScalePct(scale.value)}>{scale.label}</button
+                  >
+                {/each}
+              </div>
+              <p class="mt-1.5 font-mono text-[10px] tabular-nums text-room-text-low">
+                {settingsStore.effectiveTileMin}px
+              </p>
+            </section>
           {:else if activeSection === 'reader'}
             <section>
               <div class="mb-2 text-[12px] text-room-text">Reader layout</div>
