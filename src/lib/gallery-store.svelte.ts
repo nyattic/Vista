@@ -94,41 +94,6 @@ class GalleryStore {
       : fetchGalleries(p, this.gtype, this.sort, settingsStore.language, this.pageSize);
   }
 
-  private async fetchFilteredRemotePage(p: number, terms: Set<string>): Promise<GalleryPage> {
-    if (!terms.size) return this.fetchRemotePage(p);
-
-    const page = Math.max(1, p);
-    const targetCount = page * this.pageSize;
-    const filtered: Gallery[] = [];
-    const seen = new Set<number>();
-    let rawPage = 1;
-    let rawTotal = 0;
-    let rawTotalPages = 1;
-
-    while (filtered.length < targetCount && rawPage <= rawTotalPages) {
-      const res = await this.fetchRemotePage(rawPage);
-      rawTotal = res.total;
-      rawTotalPages = res.totalPages;
-      for (const gallery of res.items) {
-        if (seen.has(gallery.id)) continue;
-        seen.add(gallery.id);
-        if (!isBlacklisted(gallery, terms)) filtered.push(gallery);
-      }
-      rawPage++;
-    }
-
-    const scannedAll = rawPage > rawTotalPages;
-    const total = scannedAll ? filtered.length : rawTotal;
-    const totalPages = scannedAll
-      ? Math.max(1, Math.ceil(filtered.length / this.pageSize))
-      : rawTotalPages;
-    const resolvedPage = Math.min(page, totalPages);
-    const start = (resolvedPage - 1) * this.pageSize;
-    const items = filtered.slice(start, start + this.pageSize);
-
-    return { items, total, totalPages, page: resolvedPage };
-  }
-
   private async fetchPage(p: number): Promise<GalleryPage> {
     const terms = blacklistTerms();
     if (this.view === 'favorites' || this.view === 'history' || this.view === 'downloads') {
@@ -154,7 +119,7 @@ class GalleryStore {
       const items = filtered.slice(start, start + this.pageSize);
       return { items, total, totalPages, page };
     }
-    return this.fetchFilteredRemotePage(p, terms);
+    return this.fetchRemotePage(p);
   }
 
   setView(v: View) {
