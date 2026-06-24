@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
+use tokio::task;
 
 const GG_TTL: Duration = Duration::from_secs(30 * 60);
 const GG_FAIL_TTL: Duration = Duration::from_secs(2 * 60);
@@ -514,9 +515,38 @@ impl HitomiClient {
         Ok(out)
     }
 
-    fn read_cache(&self, hash: &str, is_thumbnail: bool) -> Option<(Vec<u8>, String)> {
-        let dir = self.cache_dir.get()?;
-        image_cache::read(dir, hash, is_thumbnail)
+    async fn read_cache_blocking(
+        &self,
+        hash: &str,
+        is_thumbnail: bool,
+    ) -> Option<(Vec<u8>, String)> {
+        let dir = self.cache_dir.get()?.clone();
+        let hash = hash.to_string();
+        task::spawn_blocking(move || image_cache::read(&dir, &hash, is_thumbnail))
+            .await
+            .ok()
+            .flatten()
+    }
+
+    async fn write_cache_blocking(
+        &self,
+        hash: &str,
+        is_thumbnail: bool,
+        bytes: Vec<u8>,
+        content_type: String,
+    ) {
+        let Some(dir) = self.cache_dir.get().cloned() else {
+            return;
+        };
+        let hash = hash.to_string();
+        let wrote = task::spawn_blocking(move || {
+            image_cache::write(&dir, &hash, is_thumbnail, &bytes, &content_type)
+        })
+        .await
+        .unwrap_or(false);
+        if wrote {
+            self.maybe_sweep_cache();
+        }
     }
 
     fn image_gate(&self, hash: &str, is_thumbnail: bool) -> ImageGate {
@@ -541,13 +571,13 @@ impl HitomiClient {
         if !super::is_valid_hash(hash) {
             return Err(AppError::NotFound("invalid image hash".into()));
         }
-        if let Some(hit) = self.read_cache(hash, is_thumbnail) {
+        if let Some(hit) = self.read_cache_blocking(hash, is_thumbnail).await {
             return Ok(hit);
         }
         if self.cache_dir.get().is_some() {
             let gate = self.image_gate(hash, is_thumbnail);
             let _guard = gate.lock().await;
-            if let Some(hit) = self.read_cache(hash, is_thumbnail) {
+            if let Some(hit) = self.read_cache_blocking(hash, is_thumbnail).await {
                 return Ok(hit);
             }
             return self.fetch_image_uncached(hash, is_thumbnail).await;
@@ -571,10 +601,8 @@ impl HitomiClient {
         for url in urls {
             match self.try_fetch_image(&url).await {
                 Ok((bytes, ct)) => {
-                    if let Some(dir) = self.cache_dir.get() {
-                        image_cache::write(dir, hash, is_thumbnail, &bytes, &ct);
-                        self.maybe_sweep_cache();
-                    }
+                    self.write_cache_blocking(hash, is_thumbnail, bytes.clone(), ct.clone())
+                        .await;
                     return Ok((bytes, ct));
                 }
                 Err(e) => last_err = Some(e),
@@ -606,7 +634,10 @@ impl HitomiClient {
     ) -> AppResult<DownloadResult> {
         let gallery = self.fetch_gallery_info(id).await?;
         let folder = PathBuf::from(&dir).join(sanitize(&format!("[{}] {}", id, gallery.title)));
-        std::fs::create_dir_all(&folder)?;
+        let create_folder = folder.clone();
+        task::spawn_blocking(move || std::fs::create_dir_all(create_folder))
+            .await
+            .map_err(|e| AppError::Other(e.to_string()))??;
 
         let total = gallery.files.len();
         let done = Arc::new(AtomicUsize::new(0));
@@ -667,9 +698,10 @@ impl HitomiClient {
                             let ext = image_cache::ext_from_content_type(&ct);
                             let path = folder.join(format!("{:04}.{}", i + 1, ext));
                             let tmp = folder.join(format!("{:04}.{}.part", i + 1, ext));
-                            std::fs::write(&tmp, &bytes)
-                                .and_then(|_| std::fs::rename(&tmp, &path))
-                                .is_ok()
+                            task::spawn_blocking(move || write_download_file(&tmp, &path, &bytes))
+                                .await
+                                .map(|r| r.is_ok())
+                                .unwrap_or(false)
                         }
                         Err(_) => false,
                     },
@@ -887,6 +919,19 @@ fn is_reserved_name(name: &str) -> bool {
     ];
     let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
     RESERVED.contains(&stem.as_str())
+}
+
+fn write_download_file(
+    tmp: &std::path::Path,
+    path: &std::path::Path,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    std::fs::write(tmp, bytes)?;
+    if let Err(e) = std::fs::rename(tmp, path) {
+        let _ = std::fs::remove_file(tmp);
+        return Err(e);
+    }
+    Ok(())
 }
 
 pub(crate) fn existing_page(folder: &std::path::Path, index: usize) -> Option<PathBuf> {

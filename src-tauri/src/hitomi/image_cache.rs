@@ -28,17 +28,18 @@ pub fn read(dir: &Path, hash: &str, thumb: bool) -> Option<(Vec<u8>, String)> {
     Some((bytes, content_type))
 }
 
-pub fn write(dir: &Path, hash: &str, thumb: bool, bytes: &[u8], content_type: &str) {
+pub fn write(dir: &Path, hash: &str, thumb: bool, bytes: &[u8], content_type: &str) -> bool {
     let (data, meta) = paths(dir, hash, thumb);
     if let Some(parent) = data.parent() {
         if fs::create_dir_all(parent).is_err() {
-            return;
+            return false;
         }
     }
     if write_atomic(&data, bytes).is_err() {
-        return;
+        return false;
     }
     let _ = write_atomic(&meta, content_type.as_bytes());
+    true
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {

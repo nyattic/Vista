@@ -24,12 +24,16 @@ export interface Gallery {
   pageCount: number;
   downloadFolder?: string;
   downloadFailedPages?: number[];
+  downloadAvailablePages?: number;
+  downloadMissingPages?: number;
 }
 
 export interface DownloadRecord {
   gallery: Gallery;
   folder: string;
   failedPages: number[];
+  availablePages: number;
+  missingPages: number;
 }
 
 export interface DownloadResult {

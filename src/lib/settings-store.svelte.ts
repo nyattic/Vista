@@ -38,6 +38,15 @@ function load<T>(key: string, fallback: T, validate: (v: unknown) => v is T): T 
   }
 }
 
+function clampNumber(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function persist<T>(key: string, value: T) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
 const isTheme = (v: unknown): v is Theme => v === 'system' || v === 'dark' || v === 'light';
 const isLanguage = (v: unknown): v is Language => LANGUAGES.some((l) => l.value === v);
 const isTileMin = (v: unknown): v is number =>
@@ -82,49 +91,57 @@ class SettingsStore {
   }
 
   setTheme(t: Theme) {
+    if (!isTheme(t)) return;
     this.theme = t;
-    localStorage.setItem('vista.theme', JSON.stringify(t));
+    persist('vista.theme', t);
   }
 
   setTileMin(n: number) {
-    this.tileMin = n;
-    localStorage.setItem('vista.tileMin', JSON.stringify(n));
+    const next = clampNumber(n, 120, 400, this.tileMin);
+    this.tileMin = next;
+    persist('vista.tileMin', next);
   }
 
   setGridScalePct(n: number) {
-    const scale = Math.max(100, Math.min(200, Math.round(n)));
+    const scale = clampNumber(n, 100, 200, this.gridScalePct);
     this.gridScalePct = scale;
-    localStorage.setItem('vista.gridScalePct', JSON.stringify(scale));
+    persist('vista.gridScalePct', scale);
   }
 
   setLanguage(l: Language) {
+    if (!isLanguage(l)) return;
     this.language = l;
-    localStorage.setItem('vista.language', JSON.stringify(l));
+    persist('vista.language', l);
   }
 
   setDownloadDir(dir: string) {
-    this.downloadDir = dir;
-    localStorage.setItem('vista.downloadDir', JSON.stringify(dir));
+    if (!isString(dir) || /[\u0000-\u001f\u007f]/.test(dir)) return;
+    const next = dir.trim();
+    this.downloadDir = next;
+    persist('vista.downloadDir', next);
   }
 
   setCacheLimitMb(mb: number) {
-    this.cacheLimitMb = mb;
-    localStorage.setItem('vista.cacheLimitMb', JSON.stringify(mb));
-    void setCacheLimit(mb * 1024 * 1024).catch(() => {});
+    const next = clampNumber(mb, 0, 20_480, this.cacheLimitMb);
+    this.cacheLimitMb = next;
+    persist('vista.cacheLimitMb', next);
+    void setCacheLimit(next * 1024 * 1024).catch(() => {});
   }
 
   setReadingMode(m: ReadingMode) {
+    if (!isReadingMode(m)) return;
     this.readingMode = m;
-    localStorage.setItem('vista.readingMode', JSON.stringify(m));
+    persist('vista.readingMode', m);
   }
 
   setReadingDirection(d: ReadingDirection) {
+    if (!isReadingDirection(d)) return;
     this.readingDirection = d;
-    localStorage.setItem('vista.readingDirection', JSON.stringify(d));
+    persist('vista.readingDirection', d);
   }
 
   private persistBlacklist() {
-    localStorage.setItem('vista.blacklist', JSON.stringify(this.blacklist));
+    persist('vista.blacklist', this.blacklist);
   }
 
   addBlacklist(tag: string) {

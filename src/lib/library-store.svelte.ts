@@ -27,6 +27,13 @@ class LibraryStore {
     }
     try {
       this.downloads = new Set(await api.downloadIds());
+      const records = await api.listDownloads();
+      const missing = new Set(
+        records.filter((r) => r.missingPages > 0 || r.failedPages.length > 0).map((r) => r.gallery.id)
+      );
+      if (missing.size) {
+        this.downloads = new Set([...this.downloads].filter((id) => !missing.has(id)));
+      }
     } catch {
       /* ignore */
     }

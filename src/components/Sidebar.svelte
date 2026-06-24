@@ -16,6 +16,7 @@
   const downloaded = $derived(gallery ? libraryStore.isDownloaded(gallery.id) : false);
   const prog = $derived(gallery ? libraryStore.progressOf(gallery.id) : undefined);
   const failedPages = $derived(dl?.failedPages ?? gallery?.downloadFailedPages ?? []);
+  const missingPages = $derived(gallery?.downloadMissingPages ?? 0);
 
   function searchFor(prefix: string, value: string) {
     galleryStore.applyQuery(`${prefix}:${value.replace(/ /g, '_')}`);
@@ -241,6 +242,11 @@
                 class="text-left text-[11px] text-room-warn hover:text-room-text"
                 onclick={retryFailed}>Retry {failedPages.length} failed page{failedPages.length === 1 ? '' : 's'}</button
               >
+            {/if}
+            {#if galleryStore.view === 'downloads' && missingPages > 0}
+              <div class="text-[11px] text-room-warn">
+                {missingPages} page{missingPages === 1 ? '' : 's'} missing on disk
+              </div>
             {/if}
             {#if galleryStore.view === 'downloads'}
               <button

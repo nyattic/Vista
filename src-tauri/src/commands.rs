@@ -93,9 +93,15 @@ fn validate_download_dir(dir: &str) -> AppResult<String> {
 
 fn with_local_paths(mut record: DownloadRecord) -> DownloadRecord {
     let folder = PathBuf::from(&record.folder);
+    let mut available = 0usize;
     for (i, file) in record.gallery.files.iter_mut().enumerate() {
         file.local_path = existing_page(&folder, i).map(|p| p.to_string_lossy().to_string());
+        if file.local_path.is_some() {
+            available += 1;
+        }
     }
+    record.available_pages = available;
+    record.missing_pages = record.gallery.files.len().saturating_sub(available);
     record
 }
 

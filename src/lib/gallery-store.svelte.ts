@@ -107,7 +107,9 @@ class GalleryStore {
           this.localItems = records.map((r) => ({
             ...r.gallery,
             downloadFolder: r.folder,
-            downloadFailedPages: r.failedPages
+            downloadFailedPages: r.failedPages,
+            downloadAvailablePages: r.availablePages,
+            downloadMissingPages: r.missingPages
           }));
         }
       }

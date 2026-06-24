@@ -32,6 +32,7 @@
   const chips = $derived(gallery.tags.slice(0, 3).map(parseTag));
   const fav = $derived(libraryStore.isFavorite(gallery.id));
   const downloaded = $derived(libraryStore.isDownloaded(gallery.id) || !!gallery.downloadFolder);
+  const missing = $derived(gallery.downloadMissingPages ?? 0);
   const pct = $derived(libraryStore.percent(gallery.id));
 </script>
 
@@ -94,7 +95,10 @@
     {/if}
     {#if downloaded}
       <span
-        class="absolute left-1.5 bottom-1.5 text-room-accent drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+        class="absolute left-1.5 bottom-1.5 {missing > 0
+          ? 'text-room-warn'
+          : 'text-room-accent'} drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+        title={missing > 0 ? `${missing} missing pages` : 'Downloaded'}
       >
         <Icon name="download" class="size-3.5" />
       </span>

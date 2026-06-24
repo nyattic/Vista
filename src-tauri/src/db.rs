@@ -40,6 +40,8 @@ pub struct DownloadRecord {
     pub gallery: Gallery,
     pub folder: String,
     pub failed_pages: Vec<usize>,
+    pub available_pages: usize,
+    pub missing_pages: usize,
 }
 
 pub struct Db {
@@ -241,6 +243,8 @@ impl Db {
                 gallery,
                 folder,
                 failed_pages: from_json_vec(&failed_pages),
+                available_pages: 0,
+                missing_pages: 0,
             })
         }))
     }
@@ -263,6 +267,8 @@ impl Db {
                     gallery,
                     folder,
                     failed_pages: from_json_vec(&failed_pages),
+                    available_pages: 0,
+                    missing_pages: 0,
                 })
             })
             .collect())
