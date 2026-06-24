@@ -1,6 +1,6 @@
 {
   "name": "vista",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Vista - a cross-platform gallery client built with Rust + Tauri + Svelte",
   "private": true,
   "type": "module",

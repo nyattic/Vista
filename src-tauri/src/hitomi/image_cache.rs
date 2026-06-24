@@ -133,7 +133,12 @@ mod tests {
 
     fn tmp_dir(tag: &str) -> PathBuf {
         let seq = WRITE_SEQ.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("vista-cache-test-{}-{}-{}", std::process::id(), tag, seq))
+        std::env::temp_dir().join(format!(
+            "vista-cache-test-{}-{}-{}",
+            std::process::id(),
+            tag,
+            seq
+        ))
     }
 
     const HASH_A: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -189,7 +194,10 @@ mod tests {
         }
         assert!(size(&dir) > 3000);
         enforce_limit(&dir, 3000);
-        assert!(size(&dir) <= 3000, "enforce_limit should bring total under the cap");
+        assert!(
+            size(&dir) <= 3000,
+            "enforce_limit should bring total under the cap"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

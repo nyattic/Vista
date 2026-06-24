@@ -4,6 +4,7 @@
   import { settingsStore, type Theme } from '$lib/settings-store.svelte';
   import { galleryStore } from '$lib/gallery-store.svelte';
   import { updateStore } from '$lib/update-store.svelte';
+  import { uiStore } from '$lib/ui-store.svelte';
   import { clearImageCache, imageCacheSize, defaultDownloadDir } from '$lib/api';
   import { LANGUAGES, type Language } from '$lib/types';
   import { focusTrap } from '$lib/focus-trap';
@@ -81,12 +82,36 @@
   }
 
   async function clearCache() {
+    const ok = await uiStore.confirm({
+      title: 'Clear image cache?',
+      message: 'Cached images will be downloaded again when needed.',
+      confirmLabel: 'Clear cache',
+      tone: 'danger'
+    });
+    if (!ok) return;
     await clearImageCache();
     await refreshCache();
+    uiStore.toast('Image cache cleared.', 'success');
   }
 
   function onkeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') onclose();
+  }
+
+  function onSectionKeydown(e: KeyboardEvent, index: number) {
+    let next = index;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = (index + 1) % sections.length;
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = (index - 1 + sections.length) % sections.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = sections.length - 1;
+    else return;
+    e.preventDefault();
+    activeSection = sections[next].id;
+  }
+
+  function onGridScaleInput(e: Event) {
+    const value = Number((e.currentTarget as HTMLInputElement).value);
+    settingsStore.setGridScalePct(value);
   }
 </script>
 
@@ -100,7 +125,7 @@
   }}
 >
   <div
-    class="grid h-[560px] max-h-[88vh] w-full max-w-2xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[6px] border border-room-line bg-room-panel shadow-[0_16px_48px_rgba(0,0,0,0.5)] focus:outline-none"
+    class="grid h-[560px] max-h-[88vh] w-full max-w-2xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[6px] border border-room-line bg-room-panel shadow-[0_16px_48px_rgba(0,0,0,0.5)] focus:outline-none max-sm:h-[min(640px,92vh)]"
     role="dialog"
     aria-modal="true"
     aria-label="Settings"
@@ -123,15 +148,22 @@
       </button>
     </div>
 
-    <div class="grid min-h-0 grid-cols-[150px_minmax(0,1fr)]">
-      <nav class="flex flex-col border-r border-room-line bg-room-panel/40 py-2">
-        {#each sections as section (section.id)}
+    <div class="grid min-h-0 grid-cols-[150px_minmax(0,1fr)] max-sm:grid-cols-1 max-sm:grid-rows-[auto_minmax(0,1fr)]">
+      <div
+        class="flex flex-col border-r border-room-line bg-room-panel/40 py-2 max-sm:flex-row max-sm:overflow-x-auto max-sm:border-b max-sm:border-r-0 max-sm:py-0"
+        role="tablist"
+        aria-label="Settings sections"
+      >
+        {#each sections as section, i (section.id)}
           {@const isActive = activeSection === section.id}
           <button
-            class="relative px-4 py-2 text-left font-mono text-[11px] uppercase tracking-[0.16em] transition-colors duration-150 {isActive
+            role="tab"
+            aria-selected={isActive}
+            class="relative px-4 py-2 text-left font-mono text-[11px] uppercase tracking-[0.16em] transition-colors duration-150 max-sm:shrink-0 {isActive
               ? 'text-room-accent'
               : 'text-room-text-mid hover:text-room-text'}"
             onclick={() => (activeSection = section.id)}
+            onkeydown={(e) => onSectionKeydown(e, i)}
           >
             {section.label}
             {#if isActive}
@@ -139,12 +171,12 @@
             {/if}
           </button>
         {/each}
-      </nav>
+      </div>
 
       <div class="min-h-0 overflow-auto">
         <div class="flex flex-col gap-5 p-4">
           {#if activeSection === 'appearance'}
-            <section>
+            <div id="settings-appearance" role="tabpanel" aria-label="Appearance">
               <div class="mb-2 text-[12px] text-room-text">Theme</div>
               <div class="flex gap-1.5">
                 {#each themes as t (t.value)}
@@ -157,7 +189,7 @@
                   >
                 {/each}
               </div>
-            </section>
+            </div>
 
             <section>
               <div class="mb-2 text-[12px] text-room-text">Grid size</div>
@@ -175,24 +207,33 @@
             </section>
 
             <section>
-              <div class="mb-2 text-[12px] text-room-text">Grid scale</div>
-              <div class="flex gap-1.5">
-                {#each settingsStore.gridScaleOptions as scale (scale.value)}
-                  <button
-                    class="flex-1 rounded-[3px] border px-2 py-1.5 font-mono text-[11px] tabular-nums transition {settingsStore.gridScalePct ===
-                    scale.value
-                      ? 'border-room-accent bg-room-panel-hi text-room-accent'
-                      : 'border-room-line text-room-text-mid hover:border-room-line-strong hover:text-room-text'}"
-                    onclick={() => settingsStore.setGridScalePct(scale.value)}>{scale.label}</button
-                  >
-                {/each}
+              <div class="mb-2 flex items-center justify-between gap-3">
+                <label class="text-[12px] text-room-text" for="grid-scale">Grid scale</label>
+                <span class="font-mono text-[11px] tabular-nums text-room-accent">
+                  {settingsStore.gridScalePct}%
+                </span>
+              </div>
+              <input
+                id="grid-scale"
+                class="h-7 w-full"
+                type="range"
+                min="100"
+                max="200"
+                step="25"
+                value={settingsStore.gridScalePct}
+                oninput={onGridScaleInput}
+              />
+              <div class="mt-0.5 flex justify-between font-mono text-[9.5px] tabular-nums text-room-text-low">
+                <span>100%</span>
+                <span>150%</span>
+                <span>200%</span>
               </div>
               <p class="mt-1.5 font-mono text-[10px] tabular-nums text-room-text-low">
                 {settingsStore.effectiveTileMin}px
               </p>
             </section>
           {:else if activeSection === 'reader'}
-            <section>
+            <div id="settings-reader" role="tabpanel" aria-label="Reader">
               <div class="mb-2 text-[12px] text-room-text">Reader layout</div>
               <div class="flex gap-1.5">
                 {#each readingModes as m (m.value)}
@@ -218,9 +259,9 @@
                   {/each}
                 </div>
               {/if}
-            </section>
+            </div>
           {:else if activeSection === 'content'}
-            <section>
+            <div id="settings-content" role="tabpanel" aria-label="Content">
               <div class="mb-2 text-[12px] text-room-text">Default language</div>
               <div class="flex flex-wrap gap-1.5">
                 {#each LANGUAGES as l (l.value)}
@@ -233,7 +274,7 @@
                   >
                 {/each}
               </div>
-            </section>
+            </div>
 
             <section>
               <div class="mb-2 text-[12px] text-room-text">Blacklist tags</div>
@@ -270,7 +311,7 @@
               {/if}
             </section>
           {:else if activeSection === 'downloads'}
-            <section>
+            <div id="settings-downloads" role="tabpanel" aria-label="Downloads">
               <div class="mb-2 text-[12px] text-room-text">Download folder</div>
               <div class="flex items-center gap-1.5">
                 <div
@@ -297,7 +338,7 @@
                   Your system Downloads folder, used until you choose another.
                 </p>
               {/if}
-            </section>
+            </div>
 
             <section>
               <div class="mb-2 text-[12px] text-room-text">Image cache</div>
@@ -325,7 +366,7 @@
               </div>
             </section>
           {:else if activeSection === 'about'}
-            <section class="flex flex-col gap-2">
+            <div id="settings-about" role="tabpanel" aria-label="About" class="flex flex-col gap-2">
               <div class="text-[13px] text-room-text">Vista</div>
               <div class="font-mono text-[11px] tabular-nums text-room-text-mid">
                 {updateStore.currentVersion ? `v${updateStore.currentVersion}` : ''}
@@ -333,7 +374,7 @@
               <p class="text-[11.5px] leading-relaxed text-room-text-low">
                 A cross-platform gallery client built with Rust + Tauri + Svelte.
               </p>
-            </section>
+            </div>
 
             <section>
               <div class="mb-2 text-[12px] text-room-text">Updates</div>
@@ -350,7 +391,7 @@
                   {:else if updateStore.status === 'uptodate'}
                     up to date
                   {:else if updateStore.status === 'error'}
-                    <span class="text-[#ff6b6b]">check failed</span>
+                    <span class="text-room-danger">check failed</span>
                   {/if}
                 </span>
                 {#if updateStore.status === 'available'}

@@ -85,6 +85,17 @@
     }
   }
 
+  function setPageFromRange(e: Event) {
+    const idx = Math.max(0, Math.min(lastIndex, Number((e.currentTarget as HTMLInputElement).value) - 1));
+    if (mode === 'continuous') {
+      current = idx;
+      const el = pageEls[idx];
+      if (el && scroller) scroller.scrollTo({ top: el.offsetTop });
+    } else {
+      current = clampBase(idx);
+    }
+  }
+
   $effect(() => {
     if (zoomed !== null) jumpInput = String(zoomed + 1);
     else if (mode !== 'continuous') jumpInput = String(current + 1);
@@ -212,6 +223,15 @@
     <span class="ml-auto font-mono text-[11px] tabular-nums text-room-text-mid">
       {current + 1} / {gallery.pageCount}
     </span>
+    <input
+      class="h-7 w-28 sm:w-44"
+      type="range"
+      min="1"
+      max={gallery.pageCount}
+      value={current + 1}
+      aria-label="Reader page position"
+      oninput={setPageFromRange}
+    />
   </div>
 
   {#if mode === 'continuous'}

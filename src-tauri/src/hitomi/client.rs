@@ -19,6 +19,7 @@ use tokio::sync::{Mutex as AsyncMutex, RwLock};
 const GG_TTL: Duration = Duration::from_secs(30 * 60);
 const GG_FAIL_TTL: Duration = Duration::from_secs(2 * 60);
 const CACHE_SWEEP_EVERY: usize = 200;
+const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 type ImageGate = Arc<AsyncMutex<()>>;
 type ImageLocks = Mutex<HashMap<(String, bool), Weak<AsyncMutex<()>>>>;
@@ -590,10 +591,7 @@ impl HitomiClient {
         pages: Option<Vec<usize>>,
     ) -> AppResult<DownloadResult> {
         let cancel = self.register_download(id)?;
-        let out = self
-            .clone()
-            .run_download(app, id, dir, pages, cancel)
-            .await;
+        let out = self.clone().run_download(app, id, dir, pages, cancel).await;
         self.finish_download(id);
         out
     }
@@ -659,16 +657,23 @@ impl HitomiClient {
                     );
                     return;
                 }
-                let ok = match me.fetch_image_bytes(&hash, false).await {
-                    Ok((bytes, ct)) => {
-                        let ext = image_cache::ext_from_content_type(&ct);
-                        let path = folder.join(format!("{:04}.{}", i + 1, ext));
-                        let tmp = folder.join(format!("{:04}.{}.part", i + 1, ext));
-                        std::fs::write(&tmp, &bytes)
-                            .and_then(|_| std::fs::rename(&tmp, &path))
-                            .is_ok()
-                    }
-                    Err(_) => false,
+                let fetch = me.fetch_image_bytes(&hash, false);
+                let ok = tokio::select! {
+                    result = fetch => match result {
+                        Ok((bytes, ct)) => {
+                            if cancel.load(Ordering::SeqCst) {
+                                return;
+                            }
+                            let ext = image_cache::ext_from_content_type(&ct);
+                            let path = folder.join(format!("{:04}.{}", i + 1, ext));
+                            let tmp = folder.join(format!("{:04}.{}.part", i + 1, ext));
+                            std::fs::write(&tmp, &bytes)
+                                .and_then(|_| std::fs::rename(&tmp, &path))
+                                .is_ok()
+                        }
+                        Err(_) => false,
+                    },
+                    () = wait_cancelled(cancel.clone()) => return,
                 };
                 if !ok {
                     failed.fetch_add(1, Ordering::SeqCst);
@@ -810,6 +815,12 @@ fn is_retryable(e: &AppError) -> bool {
         AppError::Network(err) => err.is_timeout() || err.is_connect(),
         AppError::Http { status, .. } => *status == 429 || (500..600).contains(status),
         _ => false,
+    }
+}
+
+async fn wait_cancelled(cancel: Arc<AtomicBool>) {
+    while !cancel.load(Ordering::SeqCst) {
+        tokio::time::sleep(CANCEL_POLL_INTERVAL).await;
     }
 }
 

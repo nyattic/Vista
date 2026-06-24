@@ -36,8 +36,10 @@
 </script>
 
 <button
+  id={`gallery-${gallery.id}`}
   type="button"
-  role="gridcell"
+  role="option"
+  aria-selected={selected}
   {tabindex}
   data-card={gallery.id}
   class="group flex flex-col overflow-hidden rounded-[4px] border text-left transition-colors duration-150 {selected

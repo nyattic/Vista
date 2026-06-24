@@ -1,6 +1,7 @@
 <script lang="ts">
   import { openDownloadFolder } from '$lib/api';
   import { downloadStore, type DownloadState } from '$lib/download-store.svelte';
+  import { uiStore } from '$lib/ui-store.svelte';
   import Icon from './Icon.svelte';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -16,13 +17,45 @@
     if (j.error === 'already downloaded') return 'Already downloaded';
     if (j.error) return `Failed · ${j.error}`;
     if (j.paused) return `Paused · ${j.done}/${j.total || '?'}`;
-    if (j.finished && j.failed) return `Done · ${j.total - j.failed}/${j.total} (${j.failed} failed)`;
+    if (j.finished && j.failed) return `Partial · ${j.total - j.failed}/${j.total} saved`;
     if (j.finished) return `Done · ${j.total} pages`;
     return `Downloading · ${j.done}/${j.total || '?'}`;
   }
 
+  function failedText(j: DownloadState): string {
+    const failed = j.failedPages?.length ?? j.failed ?? 0;
+    if (failed <= 0) return '';
+    return `${failed} page${failed === 1 ? '' : 's'} need retry`;
+  }
+
   async function openFolder(id: number) {
-    await openDownloadFolder(id).catch(() => {});
+    await openDownloadFolder(id).catch(() =>
+      uiStore.toast('Could not open the download folder.', 'danger')
+    );
+  }
+
+  async function removeJob(id: number) {
+    const ok = await uiStore.confirm({
+      title: 'Remove download from panel?',
+      message: 'This only clears the visible job entry. Downloaded files are not deleted.',
+      confirmLabel: 'Remove',
+      tone: 'danger'
+    });
+    if (!ok) return;
+    downloadStore.remove(id);
+    uiStore.toast('Download removed from panel.', 'success');
+  }
+
+  async function clearFinished() {
+    const ok = await uiStore.confirm({
+      title: 'Clear finished downloads?',
+      message: 'Finished and failed entries will be removed from the panel.',
+      confirmLabel: 'Clear',
+      tone: 'danger'
+    });
+    if (!ok) return;
+    downloadStore.clearFinished();
+    uiStore.toast('Finished downloads cleared.', 'success');
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -50,7 +83,7 @@
       <div class="flex items-center gap-1">
         <button
           class="rounded-[3px] px-2 py-0.5 text-[11px] text-room-text-low hover:text-room-text disabled:opacity-40"
-          onclick={() => downloadStore.clearFinished()}
+          onclick={clearFinished}
           disabled={!jobs.some((j) => j.finished || !!j.error)}
         >
           Clear done
@@ -68,7 +101,14 @@
     <div class="min-h-0 flex-1 overflow-auto">
       {#if jobs.length === 0}
         <div class="grid place-items-center px-6 py-10 text-center">
-          <p class="text-[12px] text-room-text-low">No downloads yet.</p>
+          <div>
+            <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-room-text-low">
+              no downloads
+            </div>
+            <p class="mt-2 text-[12px] text-room-text-mid">
+              Start a download from any gallery to track it here.
+            </p>
+          </div>
         </div>
       {:else}
         {#each jobs as j (j.id)}
@@ -78,20 +118,23 @@
                 <div class="truncate text-[12px] text-room-text">{j.title || `#${j.id}`}</div>
                 <div
                   class="font-mono text-[10px] tabular-nums {j.error
-                    ? 'text-[#ff6b6b]'
+                    ? 'text-room-danger'
                     : j.paused
-                      ? 'text-[#e0a458]'
+                      ? 'text-room-warn'
                       : j.finished
                         ? 'text-room-accent'
                         : 'text-room-text-mid'}"
                 >
                   {statusText(j)}
                 </div>
+                {#if failedText(j)}
+                  <div class="mt-0.5 text-[10.5px] text-room-warn">{failedText(j)}</div>
+                {/if}
               </div>
               <div class="flex shrink-0 items-center gap-0.5">
                 {#if j.running}
                   <button
-                    class="grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
+                    class="icon-tip icon-tip-left grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
                     onclick={() => downloadStore.cancel(j.id)}
                     title="Pause"
                     aria-label="Pause"
@@ -100,17 +143,17 @@
                   </button>
                 {:else if j.paused || j.error}
                   <button
-                    class="grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
+                    class="icon-tip icon-tip-left grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
                     onclick={() => downloadStore.start(j.id, j.title, j.failedPages)}
-                    title={j.error ? 'Retry' : 'Resume'}
-                    aria-label="Resume"
+                    title={j.failedPages?.length ? 'Retry failed pages' : j.error ? 'Retry' : 'Resume'}
+                    aria-label={j.failedPages?.length ? 'Retry failed pages' : j.error ? 'Retry' : 'Resume'}
                   >
                     <Icon name="play" class="size-3.5" />
                   </button>
                 {/if}
-                {#if !j.running && j.failedPages?.length}
+                {#if !j.running && !j.paused && !j.error && j.failedPages?.length}
                   <button
-                    class="grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
+                    class="icon-tip icon-tip-left grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
                     onclick={() => downloadStore.start(j.id, j.title, j.failedPages)}
                     title="Retry failed pages"
                     aria-label="Retry failed pages"
@@ -120,7 +163,7 @@
                 {/if}
                 {#if j.folder}
                   <button
-                    class="grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
+                    class="icon-tip icon-tip-left grid size-6 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel-hi hover:text-room-text"
                     onclick={() => openFolder(j.id)}
                     title="Open folder"
                     aria-label="Open folder"
@@ -130,8 +173,8 @@
                 {/if}
                 {#if !j.running}
                   <button
-                    class="grid size-6 place-items-center rounded-[3px] text-room-text-low hover:bg-room-panel-hi hover:text-room-text"
-                    onclick={() => downloadStore.remove(j.id)}
+                    class="icon-tip icon-tip-left grid size-6 place-items-center rounded-[3px] text-room-text-low hover:bg-room-panel-hi hover:text-room-text"
+                    onclick={() => removeJob(j.id)}
                     title="Remove"
                     aria-label="Remove"
                   >
@@ -142,7 +185,7 @@
             </div>
             <div class="h-1 overflow-hidden rounded-full bg-room-bg">
               <div
-                class="h-full {j.error ? 'bg-[#ff6b6b]' : j.paused ? 'bg-[#e0a458]' : 'bg-room-accent'}"
+                class="h-full {j.error ? 'bg-room-danger' : j.paused || j.failed ? 'bg-room-warn' : 'bg-room-accent'}"
                 style="width: {percent(j)}%"
               ></div>
             </div>

@@ -40,7 +40,8 @@ impl Gallery {
             .as_object()
             .ok_or_else(|| AppError::Decode("galleryinfo is not an object".into()))?;
 
-        let id = flexible_int(obj.get("id")).ok_or_else(|| AppError::Decode("missing id".into()))?;
+        let id =
+            flexible_int(obj.get("id")).ok_or_else(|| AppError::Decode("missing id".into()))?;
         if id <= 0 {
             return Err(AppError::Decode(format!("invalid gallery id: {id}")));
         }
@@ -55,7 +56,10 @@ impl Gallery {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
-        let language = obj.get("language").and_then(Value::as_str).map(str::to_string);
+        let language = obj
+            .get("language")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let date = obj
             .get("date")
             .and_then(Value::as_str)
@@ -134,7 +138,9 @@ fn name_list(obj: &serde_json::Map<String, Value>, plural: &str, singular: &str)
             .filter_map(|e| e.get(singular).and_then(Value::as_str).map(str::to_string))
             .collect()
     } else if let Some(arr) = obj.get(singular).and_then(Value::as_array) {
-        arr.iter().filter_map(|e| e.as_str().map(str::to_string)).collect()
+        arr.iter()
+            .filter_map(|e| e.as_str().map(str::to_string))
+            .collect()
     } else {
         Vec::new()
     }

@@ -29,7 +29,6 @@ pub fn handle(client: Arc<HitomiClient>, request: Request<Vec<u8>>, responder: U
             Ok((bytes, content_type)) => Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, content_type)
-                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                 .header(header::CACHE_CONTROL, "public, max-age=86400")
                 .body(bytes)
                 .unwrap_or_else(|_| Response::new(Vec::new())),

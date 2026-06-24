@@ -7,9 +7,16 @@
   import Icon from './Icon.svelte';
 
   let {
+    sidebarOpen,
+    ontogglesidebar,
     onopensettings,
     onopendownloads
-  }: { onopensettings: () => void; onopendownloads: () => void } = $props();
+  }: {
+    sidebarOpen: boolean;
+    ontogglesidebar: () => void;
+    onopensettings: () => void;
+    onopendownloads: () => void;
+  } = $props();
 
   const activeDownloads = $derived(downloadStore.activeCount);
 
@@ -21,6 +28,7 @@
   ];
 
   let focused = $state(false);
+  let showHelp = $state(false);
   let inputEl = $state<HTMLInputElement | null>(null);
   let suggestions = $state<Suggestion[]>([]);
   let activeIndex = $state(-1);
@@ -78,6 +86,7 @@
     const q = galleryStore.query.trim();
     if (q) searchHistoryStore.add(q);
     galleryStore.submitSearch();
+    showHelp = false;
     focused = false;
     inputEl?.blur();
   }
@@ -102,11 +111,21 @@
   function applyHistory(q: string) {
     searchHistoryStore.add(q);
     galleryStore.applyQuery(q);
+    showHelp = false;
     focused = false;
   }
 </script>
 
 <header class="flex h-12 items-center gap-3 border-b border-room-line px-4">
+  <button
+    class="icon-tip grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel hover:text-room-text lg:hidden"
+    onclick={ontogglesidebar}
+    aria-label={sidebarOpen ? 'Hide details' : 'Show details'}
+    aria-expanded={sidebarOpen}
+  >
+    <Icon name="columns" class="size-4" />
+  </button>
+
   <span class="shrink-0 select-none font-mono text-[15px] font-medium tracking-tight text-room-text">
     Vista
   </span>
@@ -116,7 +135,7 @@
   <div class="flex shrink-0 items-center gap-0.5">
     {#each views as v (v.value)}
       <button
-        class="grid size-7 place-items-center rounded-[3px] transition-colors duration-150 {galleryStore.view ===
+        class="icon-tip grid size-7 place-items-center rounded-[3px] transition-colors duration-150 {galleryStore.view ===
         v.value
           ? 'bg-room-panel-hi text-room-accent'
           : 'text-room-text-mid hover:bg-room-panel hover:text-room-text'}"
@@ -130,8 +149,8 @@
   </div>
 
   {#if galleryStore.view === 'browse'}
-    <div class="h-5 w-px shrink-0 bg-room-line"></div>
-    <div class="flex shrink-0 items-center gap-0.5" role="tablist">
+    <div class="hidden h-5 w-px shrink-0 bg-room-line md:block"></div>
+    <div class="hidden shrink-0 items-center gap-0.5 md:flex" role="tablist" aria-label="Gallery type">
       {#each GALLERY_TYPES as t (t.value)}
         <button
           role="tab"
@@ -148,7 +167,7 @@
     </div>
   {/if}
 
-  <form class="relative ml-2 w-full max-w-[520px]" onsubmit={submit}>
+  <form class="relative min-w-0 flex-1 md:ml-2 md:max-w-[520px]" onsubmit={submit}>
     <div
       class="flex h-8 items-center rounded-[3px] border border-room-line bg-room-panel transition-colors focus-within:border-room-accent"
     >
@@ -158,7 +177,7 @@
       <input
         bind:this={inputEl}
         class="min-w-0 flex-1 bg-transparent text-[12.5px] text-room-text placeholder:text-room-text-low focus:outline-none"
-        placeholder="search  e.g.  artist:foo  language:korean  female:..."
+        placeholder="Search tags, artists, languages..."
         spellcheck="false"
         autocomplete="off"
         bind:value={galleryStore.query}
@@ -177,6 +196,15 @@
         </button>
       {/if}
       <button
+        type="button"
+        class="icon-tip grid h-full place-items-center px-2 text-room-text-low hover:text-room-text"
+        onclick={() => (showHelp = !showHelp)}
+        aria-label="Search help"
+        aria-expanded={showHelp}
+      >
+        <Icon name="doc" class="size-3.5" />
+      </button>
+      <button
         type="submit"
         class="h-full border-l border-room-line px-3 font-mono text-[10.5px] uppercase tracking-[0.16em] text-room-text-mid hover:text-room-text"
       >
@@ -184,7 +212,29 @@
       </button>
     </div>
 
-    {#if showSuggest}
+    {#if showHelp}
+      <div
+        class="absolute left-0 right-0 top-9 z-40 rounded-[3px] border border-room-line bg-room-panel-hi p-3 shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+      >
+        <div class="font-mono text-[9.5px] uppercase tracking-[0.2em] text-room-text-low">
+          search syntax
+        </div>
+        <div class="mt-2 grid gap-1.5 text-[12px] text-room-text-mid">
+          <button class="text-left hover:text-room-text" type="button" onmousedown={() => applyHistory('artist:name')}>
+            <span class="font-mono text-room-accent">artist:name</span> narrows by artist.
+          </button>
+          <button class="text-left hover:text-room-text" type="button" onmousedown={() => applyHistory('language:korean')}>
+            <span class="font-mono text-room-accent">language:korean</span> filters language.
+          </button>
+          <button class="text-left hover:text-room-text" type="button" onmousedown={() => applyHistory('female:tag')}>
+            <span class="font-mono text-room-accent">female:tag</span> or <span class="font-mono text-room-accent">male:tag</span> filters namespaced tags.
+          </button>
+          <button class="text-left hover:text-room-text" type="button" onmousedown={() => applyHistory('tag_one tag_two')}>
+            Separate terms with spaces to require all of them.
+          </button>
+        </div>
+      </div>
+    {:else if showSuggest}
       <div
         class="absolute left-0 right-0 top-9 z-30 max-h-80 overflow-auto rounded-[3px] border border-room-line bg-room-panel-hi shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
       >
@@ -241,7 +291,7 @@
 
   <div class="ml-auto flex shrink-0 items-center gap-2">
     <button
-      class="relative grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel hover:text-room-text"
+      class="icon-tip icon-tip-left relative grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel hover:text-room-text"
       onclick={onopendownloads}
       aria-label="Downloads"
       title="Downloads"
@@ -255,7 +305,7 @@
       {/if}
     </button>
     <button
-      class="grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel hover:text-room-text"
+      class="icon-tip icon-tip-left grid size-7 place-items-center rounded-[3px] text-room-text-mid hover:bg-room-panel hover:text-room-text"
       onclick={onopensettings}
       aria-label="Settings"
     >

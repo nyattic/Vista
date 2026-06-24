@@ -46,7 +46,10 @@ pub fn nozomi_headers(range: Option<(usize, usize)>) -> HeaderMap {
 
 pub fn suggestions_headers() -> HeaderMap {
     let mut h = base_headers();
-    h.insert(ACCEPT, HeaderValue::from_static("application/json, text/plain, */*"));
+    h.insert(
+        ACCEPT,
+        HeaderValue::from_static("application/json, text/plain, */*"),
+    );
     h
 }
 

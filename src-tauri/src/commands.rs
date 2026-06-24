@@ -123,10 +123,7 @@ pub async fn fetch_galleries(
 }
 
 #[tauri::command]
-pub async fn fetch_gallery(
-    client: State<'_, Arc<HitomiClient>>,
-    id: i64,
-) -> AppResult<Gallery> {
+pub async fn fetch_gallery(client: State<'_, Arc<HitomiClient>>, id: i64) -> AppResult<Gallery> {
     let id = validate_id(id)?;
     client.fetch_gallery_info(id).await
 }
@@ -328,6 +325,5 @@ pub fn open_download_folder(db: State<'_, Db>, id: i64) -> AppResult<()> {
     if !folder.is_dir() {
         return Err(AppError::NotFound("download folder".into()));
     }
-    tauri_plugin_opener::open_path(folder, None::<&str>)
-        .map_err(|e| AppError::Other(e.to_string()))
+    tauri_plugin_opener::open_path(folder, None::<&str>).map_err(|e| AppError::Other(e.to_string()))
 }

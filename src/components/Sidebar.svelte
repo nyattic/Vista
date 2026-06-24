@@ -4,8 +4,11 @@
   import { readerStore } from '$lib/reader-store.svelte';
   import { downloadStore } from '$lib/download-store.svelte';
   import { libraryStore } from '$lib/library-store.svelte';
+  import { uiStore } from '$lib/ui-store.svelte';
   import { formatDate, parseTag, tagToQuery } from '$lib/format';
   import Icon from './Icon.svelte';
+
+  let { class: cls = '' }: { class?: string } = $props();
 
   const gallery = $derived(galleryStore.selected);
   const dl = $derived(gallery ? downloadStore.get(gallery.id) : undefined);
@@ -21,25 +24,45 @@
   async function toggleFav() {
     if (!gallery) return;
     const nowFav = await libraryStore.toggleFavorite(gallery);
+    uiStore.toast(nowFav ? 'Added to favorites.' : 'Removed from favorites.', 'success');
     if (!nowFav && galleryStore.view === 'favorites') galleryStore.load(1);
   }
 
   async function dropHistory() {
     if (!gallery) return;
+    const ok = await uiStore.confirm({
+      title: 'Remove from history?',
+      message: 'This gallery will disappear from the history view.',
+      confirmLabel: 'Remove',
+      tone: 'danger'
+    });
+    if (!ok) return;
     await removeHistory(gallery.id);
     if (galleryStore.view === 'history') galleryStore.load(1);
+    uiStore.toast('Removed from history.', 'success');
   }
 
   async function dropDownload() {
     if (!gallery) return;
+    const ok = await uiStore.confirm({
+      title: 'Remove download record?',
+      message: 'Files on disk will not be deleted, but this item will leave the downloads view.',
+      confirmLabel: 'Remove',
+      tone: 'danger'
+    });
+    if (!ok) return;
     await removeDownload(gallery.id).catch(() => {});
     libraryStore.markNotDownloaded(gallery.id);
     downloadStore.remove(gallery.id);
     if (galleryStore.view === 'downloads') galleryStore.load(1);
+    uiStore.toast('Download record removed.', 'success');
   }
 
   async function openFolder() {
-    if (gallery) await openDownloadFolder(gallery.id).catch(() => {});
+    if (!gallery) return;
+    await openDownloadFolder(gallery.id).catch(() =>
+      uiStore.toast('Could not open the download folder.', 'danger')
+    );
   }
 
   function retryFailed() {
@@ -55,11 +78,12 @@
     const url = `https://hitomi.la/reader/${gallery.id}.html`;
     try {
       await navigator.clipboard.writeText(url);
+      uiStore.toast('Link copied.', 'success');
       shareCopied = true;
       clearTimeout(shareTimer);
       shareTimer = setTimeout(() => (shareCopied = false), 1500);
     } catch {
-      /* ignore */
+      uiStore.toast('Could not copy the link.', 'danger');
     }
   }
 
@@ -75,7 +99,7 @@
   );
 </script>
 
-<aside class="order-1 flex min-h-0 flex-col border-r border-room-line bg-room-panel/40">
+<aside class="order-1 flex min-h-0 flex-col border-r border-room-line bg-room-panel/40 {cls}">
   {#if gallery}
     {#key gallery.id}
       <div class="min-h-0 overflow-auto">
@@ -136,28 +160,28 @@
                 {prog && prog.page > 1 ? `Continue · p${prog.page}` : 'Read'}
               </button>
               <button
-                class="flex items-center justify-center rounded-[3px] border px-3 transition {fav
+                class="icon-tip flex items-center justify-center rounded-[3px] border px-3 transition {fav
                   ? 'border-room-fav/50 text-room-fav'
                   : 'border-room-line text-room-text-mid hover:border-room-line-strong hover:text-room-text'}"
                 onclick={toggleFav}
                 title={fav ? 'Remove favorite' : 'Add favorite'}
-                aria-label="Favorite"
+                aria-label={fav ? 'Remove favorite' : 'Add favorite'}
               >
                 <Icon name="heart" class="size-4" filled={fav} />
               </button>
               <button
-                class="flex items-center justify-center rounded-[3px] border px-3 transition {shareCopied
+                class="icon-tip flex items-center justify-center rounded-[3px] border px-3 transition {shareCopied
                   ? 'border-room-accent/50 text-room-accent'
                   : 'border-room-line text-room-text-mid hover:border-room-line-strong hover:text-room-text'}"
                 onclick={share}
                 title="Copy link"
-                aria-label="Share"
+                aria-label={shareCopied ? 'Copied' : 'Copy link'}
               >
                 <Icon name={shareCopied ? 'check' : 'share'} class="size-4" />
               </button>
               {#if dl?.running}
                 <button
-                  class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
+                  class="icon-tip flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
                   onclick={() => downloadStore.cancel(gallery.id)}
                   title="Pause download"
                   aria-label="Pause download"
@@ -166,7 +190,7 @@
                 </button>
               {:else if failedPages.length > 0}
                 <button
-                  class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
+                  class="icon-tip flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
                   onclick={retryFailed}
                   title="Retry failed pages"
                   aria-label="Retry failed pages"
@@ -175,7 +199,7 @@
                 </button>
               {:else if downloaded}
                 <button
-                  class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-accent transition hover:border-room-line-strong"
+                  class="icon-tip flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-accent transition hover:border-room-line-strong"
                   onclick={openFolder}
                   title="Open downloaded folder"
                   aria-label="Open downloaded folder"
@@ -184,10 +208,10 @@
                 </button>
               {:else}
                 <button
-                  class="flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
+                  class="icon-tip flex items-center justify-center gap-1.5 rounded-[3px] border border-room-line px-3 text-room-text-mid transition hover:border-room-line-strong hover:text-room-text"
                   onclick={() => downloadStore.start(gallery.id, gallery.title)}
                   title={dl?.paused ? 'Resume download' : 'Download'}
-                  aria-label="Download"
+                  aria-label={dl?.paused ? 'Resume download' : 'Download'}
                 >
                   <Icon name="download" class="size-4" />
                 </button>
@@ -214,7 +238,7 @@
             {/if}
             {#if galleryStore.view === 'downloads' && failedPages.length > 0}
               <button
-                class="text-left text-[11px] text-[#e0a458] hover:text-room-text"
+                class="text-left text-[11px] text-room-warn hover:text-room-text"
                 onclick={retryFailed}>Retry {failedPages.length} failed page{failedPages.length === 1 ? '' : 's'}</button
               >
             {/if}
@@ -229,12 +253,12 @@
                 {#if dl.error === 'already downloaded'}
                   <span class="text-room-accent">Already downloaded</span>
                 {:else if dl.error}
-                  <span class="text-[#ff6b6b]">Download failed: {dl.error}</span>
+                  <span class="text-room-danger">Download failed: {dl.error}</span>
                 {:else if dl.paused}
-                  <span class="text-[#e0a458]">Paused · {dl.done}/{dl.total || '?'}</span>
+                  <span class="text-room-warn">Paused · {dl.done}/{dl.total || '?'}</span>
                 {:else if dl.finished && dl.failed}
-                  <span class="text-[#e0a458]"
-                    >Downloaded · {dl.total - dl.failed}/{dl.total} ({dl.failed} failed)</span
+                  <span class="text-room-warn"
+                    >Partial · {dl.total - dl.failed}/{dl.total} saved · {dl.failed} failed</span
                   >
                 {:else if dl.finished}
                   <span class="text-room-accent">Downloaded · {dl.total} pages</span>
@@ -292,7 +316,9 @@
         <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-room-text-low">
           no selection
         </div>
-        <p class="mt-2 text-[12px] text-room-text-mid">Select a gallery to inspect.</p>
+        <p class="mt-2 max-w-[220px] text-[12px] text-room-text-mid">
+          Select a gallery to inspect tags, progress, and download actions.
+        </p>
       </div>
     </div>
   {/if}

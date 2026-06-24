@@ -97,6 +97,30 @@
     settingsStore.gridScalePct;
     galleryStore.setPageSize(pageSizeForContainer());
   });
+
+  const emptyTitle = $derived(
+    galleryStore.searching
+      ? 'no matches'
+      : galleryStore.view === 'favorites'
+        ? 'no favorites'
+        : galleryStore.view === 'history'
+          ? 'no history'
+          : galleryStore.view === 'downloads'
+            ? 'no downloads'
+            : 'no results'
+  );
+
+  const emptyText = $derived(
+    galleryStore.searching
+      ? 'Try another tag, artist, or language filter.'
+      : galleryStore.view === 'favorites'
+        ? 'Use the heart action on a gallery to save it here.'
+        : galleryStore.view === 'history'
+          ? 'Read a gallery and it will appear here.'
+          : galleryStore.view === 'downloads'
+            ? 'Download a gallery to build your local library.'
+            : 'Try changing the type, language, or sort order.'
+  );
 </script>
 
 <div bind:this={container} class="min-h-0 flex-1 overflow-auto p-3">
@@ -122,16 +146,23 @@
     <div class="grid h-full place-items-center px-8 text-center">
       <div>
         <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-room-text-low">
-          no results
+          {emptyTitle}
         </div>
-        <p class="mt-2 text-[12px] text-room-text-mid">No galleries found.</p>
+        <p class="mt-2 max-w-xs text-[12px] text-room-text-mid">{emptyText}</p>
+        {#if galleryStore.searching}
+          <button
+            class="mt-4 rounded-[3px] border border-room-line px-3 py-1.5 text-[11px] text-room-text hover:border-room-line-strong"
+            onclick={() => galleryStore.clearSearch()}>Clear search</button
+          >
+        {/if}
       </div>
     </div>
   {:else}
     <div
       class="grid gap-2.5"
       style="grid-template-columns: repeat(auto-fill, minmax({settingsStore.effectiveTileMin}px, 1fr));"
-      role="grid"
+      role="listbox"
+      aria-label="Galleries"
     >
       {#each galleryStore.visible as gallery, index (gallery.id)}
         <GalleryCard

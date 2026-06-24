@@ -5,9 +5,8 @@ use regex::Regex;
 
 static HASH_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"/[0-9a-f]{61}([0-9a-f]{2})([0-9a-f])").unwrap());
-static SUBDOMAIN_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"//..?\.(?:gold-usergeneratedcontent\.net|hitomi\.la)/").unwrap()
-});
+static SUBDOMAIN_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"//..?\.(?:gold-usergeneratedcontent\.net|hitomi\.la)/").unwrap());
 
 pub fn generate_all_urls(
     hash: &str,
@@ -124,7 +123,11 @@ fn normalized_base_path(value: &str) -> String {
 fn normalized_formats(formats: &[&str]) -> Vec<String> {
     let sanitized: Vec<String> = formats
         .iter()
-        .map(|f| f.to_lowercase().trim_matches(['.', ' ', '\n', '\r', '\t']).to_string())
+        .map(|f| {
+            f.to_lowercase()
+                .trim_matches(['.', ' ', '\n', '\r', '\t'])
+                .to_string()
+        })
         .filter(|f| !f.is_empty())
         .collect();
     let with_default = if sanitized.is_empty() {
@@ -145,7 +148,10 @@ fn image_directory(format: &str) -> Option<&'static str> {
 
 fn dedup(items: Vec<String>) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
-    items.into_iter().filter(|s| seen.insert(s.clone())).collect()
+    items
+        .into_iter()
+        .filter(|s| seen.insert(s.clone()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -195,7 +201,10 @@ mod tests {
             normalized_formats(&[]),
             vec!["webp".to_string(), "avif".to_string()]
         );
-        assert_eq!(normalized_formats(&["webp", "webp"]), vec!["webp".to_string()]);
+        assert_eq!(
+            normalized_formats(&["webp", "webp"]),
+            vec!["webp".to_string()]
+        );
     }
 
     #[test]

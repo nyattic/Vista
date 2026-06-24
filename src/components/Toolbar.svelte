@@ -2,11 +2,20 @@
   import { galleryStore } from '$lib/gallery-store.svelte';
   import { clearHistory } from '$lib/api';
   import { SORT_ORDERS } from '$lib/types';
+  import { uiStore } from '$lib/ui-store.svelte';
   import Icon from './Icon.svelte';
 
   async function onClearHistory() {
+    const ok = await uiStore.confirm({
+      title: 'Clear reading history?',
+      message: 'This removes every history entry from the library view.',
+      confirmLabel: 'Clear history',
+      tone: 'danger'
+    });
+    if (!ok) return;
     await clearHistory();
     galleryStore.load(1);
+    uiStore.toast('Reading history cleared.', 'success');
   }
 </script>
 
@@ -51,4 +60,3 @@
     </button>
   {/if}
 </nav>
-
