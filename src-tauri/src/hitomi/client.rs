@@ -3,7 +3,7 @@ use super::models::{Gallery, GalleryPage, GalleryType, SortOrder, Suggestion};
 use super::nozomi::{
     build_browse_nozomi_urls, fetch_all_gallery_ids, fetch_gallery_ids, nozomi_url_from_args,
 };
-use super::search::{build_constraints, constraint_to_nozomi_url, parse as parse_query};
+use super::search::{apply_filters, build_constraints, constraint_to_nozomi_url, parse as parse_query};
 use super::{config, http, image_cache, url_gen};
 use crate::error::{AppError, AppResult};
 use futures::future::join_all;
@@ -322,10 +322,11 @@ impl HitomiClient {
         query: &str,
         page: usize,
         page_size: usize,
+        gtype: GalleryType,
         sort: SortOrder,
         language: &str,
     ) -> AppResult<GalleryPage> {
-        let ids = self.resolve_search_ids(query, language, sort).await?;
+        let ids = self.resolve_search_ids(query, gtype, language, sort).await?;
         Ok(self.paginate_ids(ids, page, page_size).await)
     }
 
@@ -353,13 +354,12 @@ impl HitomiClient {
     async fn resolve_search_ids(
         &self,
         query: &str,
+        gtype: GalleryType,
         language: &str,
         sort: SortOrder,
     ) -> AppResult<Vec<i64>> {
         let mut terms = parse_query(query);
-        if terms.language.is_none() && !language.is_empty() && language != "all" {
-            terms.language = Some(language.to_string());
-        }
+        apply_filters(&mut terms, language, gtype.slug());
         let effective_language = terms.language.as_deref().unwrap_or("all");
         let constraints = build_constraints(&terms);
 
@@ -1140,7 +1140,7 @@ mod tests {
     async fn live_search() {
         let client = HitomiClient::new();
         let result = client
-            .search_galleries("male:furry", 3, TEST_PAGE_SIZE, SortOrder::Latest, "all")
+            .search_galleries("male:furry", 3, TEST_PAGE_SIZE, GalleryType::All, SortOrder::Latest, "all")
             .await
             .expect("search failed");
         println!(

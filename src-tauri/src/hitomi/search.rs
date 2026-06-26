@@ -42,6 +42,15 @@ pub fn parse(query: &str) -> SearchTerms {
     t
 }
 
+pub fn apply_filters(t: &mut SearchTerms, language: &str, gtype_slug: &str) {
+    if t.language.is_none() && !language.is_empty() && language != "all" {
+        t.language = Some(language.to_string());
+    }
+    if !gtype_slug.is_empty() && t.types.is_empty() {
+        t.types.push(gtype_slug.to_string());
+    }
+}
+
 pub fn build_constraints(t: &SearchTerms) -> Vec<String> {
     let mut c: Vec<String> = Vec::new();
     if let Some(lang) = &t.language {
@@ -149,5 +158,41 @@ mod tests {
     fn empty_query_yields_no_constraints() {
         let t = parse("   ");
         assert!(build_constraints(&t).is_empty());
+    }
+
+    #[test]
+    fn ui_category_is_injected_as_type_constraint() {
+        let mut t = parse("naruto");
+        apply_filters(&mut t, "all", "doujinshi");
+        assert_eq!(t.types, vec!["doujinshi"]);
+        assert!(build_constraints(&t).contains(&"type:doujinshi".to_string()));
+    }
+
+    #[test]
+    fn explicit_type_in_query_overrides_ui_category() {
+        let mut t = parse("type:manga naruto");
+        apply_filters(&mut t, "all", "doujinshi");
+        assert_eq!(t.types, vec!["manga"]);
+    }
+
+    #[test]
+    fn all_category_adds_no_type_constraint() {
+        let mut t = parse("naruto");
+        apply_filters(&mut t, "all", "");
+        assert!(t.types.is_empty());
+    }
+
+    #[test]
+    fn ui_language_defaults_when_query_has_none() {
+        let mut t = parse("naruto");
+        apply_filters(&mut t, "korean", "");
+        assert_eq!(t.language.as_deref(), Some("korean"));
+    }
+
+    #[test]
+    fn query_language_overrides_ui_language() {
+        let mut t = parse("language:japanese naruto");
+        apply_filters(&mut t, "korean", "");
+        assert_eq!(t.language.as_deref(), Some("japanese"));
     }
 }

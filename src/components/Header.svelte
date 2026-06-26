@@ -154,9 +154,8 @@
       {#each GALLERY_TYPES as t (t.value)}
         <button
           role="tab"
-          aria-selected={!galleryStore.searching && galleryStore.gtype === t.value}
-          class="rounded-[3px] px-2 py-1 text-[11.5px] tracking-tight transition-colors duration-150 {!galleryStore.searching &&
-          galleryStore.gtype === t.value
+          aria-selected={galleryStore.gtype === t.value}
+          class="rounded-[3px] px-2 py-1 text-[11.5px] tracking-tight transition-colors duration-150 {galleryStore.gtype === t.value
             ? 'bg-room-panel-hi text-room-accent'
             : 'text-room-text-mid hover:bg-room-panel hover:text-room-text'}"
           onclick={() => galleryStore.setType(t.value)}

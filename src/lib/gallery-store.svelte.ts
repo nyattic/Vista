@@ -90,7 +90,7 @@ class GalleryStore {
 
   private async fetchRemotePage(p: number): Promise<GalleryPage> {
     return this.activeQuery
-      ? searchGalleries(this.activeQuery, p, this.sort, settingsStore.language, this.pageSize)
+      ? searchGalleries(this.activeQuery, p, this.gtype, this.sort, settingsStore.language, this.pageSize)
       : fetchGalleries(p, this.gtype, this.sort, settingsStore.language, this.pageSize);
   }
 
@@ -207,8 +207,6 @@ class GalleryStore {
   setType(t: GalleryType) {
     this.view = 'browse';
     this.gtype = t;
-    this.query = '';
-    this.activeQuery = '';
     this.load(1);
   }
 
